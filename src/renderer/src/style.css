@@ -1,0 +1,404 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sky-50: #f4f9ff;
+    --sky-100: #e6f1fe;
+    --sky-200: #cce3fd;
+    --sky-300: #9ccbfb;
+    --sky-400: #5faef7;
+    --sky-500: #1f8fff;
+    --sky-600: #1573d9;
+    --sky-700: #0f58a8;
+    --ice: #f4f8ff;
+    --ice-deep: #e6efe1;
+    --ice-edge: #dee7f5;
+    --navy: #0a2540;
+    --navy-soft: #1a365d;
+    --navy-mute: #4a6989;
+    --navy-mist: #8fa4bf;
+  }
+
+  * {
+    border-color: var(--ice-edge);
+  }
+
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+  }
+
+  body {
+    color: var(--navy);
+    font-family:
+      'Onest', -apple-system, BlinkMacSystemFont, 'PingFang SC',
+      'Hiragino Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+    font-feature-settings: 'cv11' 1, 'ss01' 1;
+  }
+
+  ::selection {
+    background: rgba(31, 143, 255, 0.22);
+    color: var(--navy);
+  }
+}
+
+/* electron drag regions */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* the outer liquid-glass shell */
+.glass-shell {
+  position: relative;
+  background:
+    radial-gradient(900px 520px at 88% -10%, rgba(31, 143, 255, 0.22), transparent 60%),
+    radial-gradient(900px 600px at -12% 110%, rgba(95, 174, 247, 0.18), transparent 60%),
+    linear-gradient(180deg, #f8fbff 0%, #eaf2fc 100%);
+  /* faint speckle to sell the glass material */
+  background-blend-mode: normal, normal, normal;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+    0 1px 2px rgba(10, 37, 64, 0.04),
+    0 24px 60px -24px rgba(10, 37, 64, 0.28);
+}
+
+/* a subtle highlight band along the top edge of the shell */
+.glass-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 60%;
+  border-radius: inherit;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 40%
+  );
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+/* a thin specular line at the top, like the sheen on the logo glass */
+.glass-shell::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 1px;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.95) 30%,
+    rgba(255, 255, 255, 0.95) 70%,
+    transparent
+  );
+  pointer-events: none;
+}
+
+/* white glass tile — used by source input */
+.glass-tile {
+  position: relative;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.78) 0%,
+    rgba(255, 255, 255, 0.62) 100%
+  );
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(222, 231, 245, 0.9),
+    0 1px 2px rgba(10, 37, 64, 0.04);
+  transition:
+    box-shadow 220ms ease,
+    transform 220ms ease;
+}
+
+.glass-tile:focus-within {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 0 0 1px rgba(31, 143, 255, 0.55),
+    0 0 0 4px rgba(31, 143, 255, 0.14),
+    0 4px 14px -6px rgba(31, 143, 255, 0.25);
+}
+
+/* blue-tinted glass — used by translation result */
+.glass-tile--blue {
+  background:
+    radial-gradient(120% 80% at 80% -10%, rgba(255, 255, 255, 0.85), transparent 60%),
+    linear-gradient(
+      180deg,
+      rgba(31, 143, 255, 0.12) 0%,
+      rgba(31, 143, 255, 0.06) 100%
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(31, 143, 255, 0.22),
+    0 6px 22px -10px rgba(31, 143, 255, 0.35);
+}
+
+/* glyph icon button — minimal stroke, glass hover */
+.glyph {
+  position: relative;
+  height: 28px;
+  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--navy-mute);
+  border: 0;
+  border-radius: 9px;
+  outline: none;
+  transition:
+    color 200ms ease,
+    background 200ms ease,
+    box-shadow 200ms ease;
+}
+.glyph:hover {
+  color: var(--sky-500);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 0 0 1px rgba(222, 231, 245, 0.9),
+    0 1px 2px rgba(10, 37, 64, 0.04);
+}
+.glyph:focus,
+.glyph:focus-visible {
+  outline: none;
+}
+.glyph[data-active='true'] {
+  color: var(--sky-500);
+  background: rgba(31, 143, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(31, 143, 255, 0.28);
+}
+
+/* the primary action — pill-shaped solid blue */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 8px 16px;
+  background: linear-gradient(180deg, #2fa0ff 0%, #1f8fff 100%);
+  color: #ffffff;
+  font-weight: 500;
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  border-radius: 999px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 6px 18px -6px rgba(31, 143, 255, 0.55),
+    0 1px 2px rgba(10, 37, 64, 0.06);
+  transition:
+    transform 160ms ease,
+    box-shadow 200ms ease,
+    background 200ms ease;
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #44acff 0%, #1f8fff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 10px 24px -6px rgba(31, 143, 255, 0.55),
+    0 1px 2px rgba(10, 37, 64, 0.06);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-primary:disabled {
+  background: linear-gradient(180deg, #b6d3ee 0%, #a5c4e3 100%);
+  color: #ffffff;
+  cursor: not-allowed;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+/* circular icon-only action button — primary blue */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #2fa0ff 0%, #1f8fff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 6px 16px -6px rgba(31, 143, 255, 0.55),
+    0 1px 2px rgba(10, 37, 64, 0.06);
+  transition:
+    transform 160ms ease,
+    box-shadow 200ms ease,
+    background 200ms ease;
+}
+.btn-icon:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #44acff 0%, #1f8fff 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 10px 22px -6px rgba(31, 143, 255, 0.55),
+    0 1px 2px rgba(10, 37, 64, 0.06);
+}
+.btn-icon:active:not(:disabled) {
+  transform: translateY(0);
+}
+.btn-icon:disabled {
+  background: linear-gradient(180deg, #cdddec 0%, #b9cce0 100%);
+  cursor: not-allowed;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+/* ghost text button */
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--navy-mute);
+  font-size: 12px;
+  transition:
+    color 180ms ease,
+    background 180ms ease;
+}
+.btn-ghost:hover:not(:disabled) {
+  color: var(--sky-500);
+  background: rgba(31, 143, 255, 0.08);
+}
+
+/* native textarea inside the glass tile */
+.glass-textarea {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  resize: none;
+  color: var(--navy);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.65;
+  padding: 14px 16px;
+  caret-color: var(--sky-500);
+}
+.glass-textarea::placeholder {
+  color: var(--navy-mist);
+}
+
+/* native input inside the settings tile */
+.glass-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--navy);
+  padding: 10px 12px;
+}
+.glass-input::placeholder {
+  color: var(--navy-mist);
+}
+
+/* tiny status dot — hue switches by status */
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--sky-500);
+  box-shadow: 0 0 0 3px rgba(31, 143, 255, 0.18);
+}
+.status-dot[data-tone='loading'] {
+  animation: breathe 1.6s ease-in-out infinite;
+  background: #f4b740;
+  box-shadow: 0 0 0 3px rgba(244, 183, 64, 0.18);
+}
+.status-dot[data-tone='error'] {
+  background: #e15050;
+  box-shadow: 0 0 0 3px rgba(225, 80, 80, 0.18);
+}
+.status-dot[data-tone='idle'] {
+  background: var(--navy-mist);
+  box-shadow: 0 0 0 3px rgba(143, 164, 191, 0.16);
+}
+
+/* shimmer placeholder for loading translation */
+.shimmer-line {
+  position: relative;
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(
+    90deg,
+    rgba(31, 143, 255, 0.05) 0%,
+    rgba(31, 143, 255, 0.18) 45%,
+    rgba(31, 143, 255, 0.05) 90%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 2.4s ease-in-out infinite;
+}
+
+/* slim scrollbar — sky tinted */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(31, 143, 255, 0.22);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(31, 143, 255, 0.4);
+}
+
+/* hairline rule — used between sections */
+.hairline {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(222, 231, 245, 0.9) 12%,
+    rgba(222, 231, 245, 0.9) 88%,
+    transparent
+  );
+}
+
+/* kbd visual — pill with subtle inner shadow */
+kbd.kbd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 7px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--navy-soft);
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 -1px 0 rgba(10, 37, 64, 0.06),
+    inset 0 0 0 1px rgba(222, 231, 245, 0.9);
+}
