@@ -46,21 +46,24 @@ module.exports = {
       },
       fontFamily: {
         display: [
-          '"Bricolage Grotesque"',
-          '"Onest"',
           '-apple-system',
           'BlinkMacSystemFont',
+          '"Segoe UI"',
+          '"PingFang SC"',
+          '"Hiragino Sans"',
+          '"Microsoft YaHei"',
           'sans-serif'
         ],
         sans: [
-          '"Onest"',
           '-apple-system',
           'BlinkMacSystemFont',
+          '"Segoe UI"',
           '"PingFang SC"',
           '"Hiragino Sans"',
+          '"Microsoft YaHei"',
           'sans-serif'
         ],
-        mono: ['"JetBrains Mono"', '"SF Mono"', 'ui-monospace', 'monospace']
+        mono: ['ui-monospace', '"SF Mono"', 'Menlo', 'Monaco', 'Consolas', 'monospace']
       },
       letterSpacing: {
         tight: '-0.02em',

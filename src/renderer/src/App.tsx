@@ -1,9 +1,17 @@
 import type { KeyboardEvent, ReactElement } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowRightLeft, Check, Copy, Loader2, Settings, X } from 'lucide-react'
 
 import type { ApiSettings } from '../../main/settings'
 import type { TranslationState } from '../../main/window'
 import lazyTransLogo from './assets/lazytrans-logo.png'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 
 const initialState: TranslationState = {
   status: 'idle',
@@ -19,13 +27,14 @@ const emptyApiSettings: ApiSettings = {
 }
 
 type SettingsStatus = 'idle' | 'loading' | 'saved' | 'error'
+type CopyStatus = 'idle' | 'copied' | 'error'
 
 const DOT_TONE: Record<TranslationState['status'], string> = {
-  idle: 'idle',
-  loading: 'loading',
-  success: 'success',
-  empty: 'idle',
-  error: 'error'
+  idle: 'bg-muted-foreground/40',
+  loading: 'bg-amber-500 animate-pulse',
+  success: 'bg-primary',
+  empty: 'bg-muted-foreground/40',
+  error: 'bg-destructive'
 }
 
 export default function App(): ReactElement {
@@ -36,7 +45,9 @@ export default function App(): ReactElement {
   const [settingsDraft, setSettingsDraft] = useState<ApiSettings>(emptyApiSettings)
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle')
   const [settingsMessage, setSettingsMessage] = useState('')
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const shortcutLabel = translation.shortcutLabel ?? 'Option + D'
   const trimmedManual = manualText.trim()
@@ -94,6 +105,20 @@ export default function App(): ReactElement {
     textareaRef.current.style.height = `${target}px`
   }, [manualText])
 
+  useEffect(() => {
+    setCopyStatus('idle')
+    if (copyResetTimer.current) {
+      clearTimeout(copyResetTimer.current)
+      copyResetTimer.current = null
+    }
+  }, [translation.translatedText])
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+    }
+  }, [])
+
   const submitManualText = async (): Promise<void> => {
     if (!canSubmit) return
     setIsSubmitting(true)
@@ -135,12 +160,31 @@ export default function App(): ReactElement {
     }
   }
 
+  const copyTranslatedText = async (): Promise<void> => {
+    const text = translation.translatedText
+    if (!text) return
+    if (copyResetTimer.current) {
+      clearTimeout(copyResetTimer.current)
+      copyResetTimer.current = null
+    }
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyStatus('copied')
+    } catch {
+      setCopyStatus('error')
+    }
+    copyResetTimer.current = setTimeout(() => {
+      setCopyStatus('idle')
+      copyResetTimer.current = null
+    }, 1600)
+  }
+
   const renditionContent = useMemo<ReactElement>(() => {
     if (translation.status === 'success' && translation.translatedText) {
       return (
         <p
           key={translation.translatedText}
-          className="font-display text-[19px] leading-[1.65] text-navy tracking-tight animate-bubble"
+          className="text-base leading-relaxed text-foreground whitespace-pre-wrap"
         >
           {translation.translatedText}
         </p>
@@ -149,7 +193,7 @@ export default function App(): ReactElement {
 
     if (translation.status === 'error') {
       return (
-        <p className="font-sans text-[13px] leading-relaxed text-[#C73E3E]">
+        <p className="text-sm leading-relaxed text-destructive">
           {translation.errorMessage || '出错了'}
         </p>
       )
@@ -158,32 +202,33 @@ export default function App(): ReactElement {
     if (isLoading) {
       if (translation.translatedText) {
         return (
-          <p className="font-display text-[19px] leading-[1.65] text-navy/70 tracking-tight">
+          <p className="text-base leading-relaxed text-muted-foreground whitespace-pre-wrap">
             {translation.translatedText}
           </p>
         )
       }
       return (
         <div className="flex flex-col gap-2.5">
-          <div className="shimmer-line" style={{ width: '92%' }} />
-          <div className="shimmer-line" style={{ width: '76%' }} />
-          <div className="shimmer-line" style={{ width: '54%' }} />
+          <Skeleton className="h-3.5 w-[92%]" />
+          <Skeleton className="h-3.5 w-[76%]" />
+          <Skeleton className="h-3.5 w-[54%]" />
         </div>
       )
     }
 
     if (translation.status === 'empty') {
       return (
-        <p className="font-sans text-[13px] leading-relaxed text-navy-mute">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {translation.errorMessage || '没有获取到选中文本'}
         </p>
       )
     }
 
-    // idle — minimal hint, kbd only
     return (
       <div className="flex h-full w-full items-center justify-center">
-        <kbd className="kbd-pill !text-[12px] !px-3 !py-1.5">{shortcutLabel}</kbd>
+        <kbd className="inline-flex items-center rounded border bg-background px-2 py-1 font-mono text-xs text-muted-foreground shadow-sm">
+          {shortcutLabel}
+        </kbd>
       </div>
     )
   }, [
@@ -195,62 +240,57 @@ export default function App(): ReactElement {
   ])
 
   return (
-    <main className="h-full w-full p-0">
-      <section className="glass-shell relative flex h-full w-full flex-col overflow-hidden rounded-[18px] font-sans text-navy animate-rise">
-        {/* Titlebar — logo only, no brand text */}
-        <header className="drag-region relative z-10 flex h-[44px] shrink-0 items-center justify-between px-3.5">
+    <main className="h-full w-full p-2">
+      <Card className="flex h-full w-full flex-col overflow-hidden">
+        <header className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
           <div className="no-drag flex items-center">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
               onClick={closeWindow}
-              className="glyph"
               aria-label="关闭"
               title="关闭"
             >
-              <CloseGlyph />
-            </button>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
           <div className="pointer-events-none flex items-center gap-2">
-            <img
-              src={lazyTransLogo}
-              alt="lazytrans"
-              className="h-7 w-7 drop-shadow-[0_2px_8px_rgba(31,143,255,0.5)]"
-            />
+            <img src={lazyTransLogo} alt="lazytrans" className="h-6 w-6" />
             <span
-              className="status-dot"
-              data-tone={DOT_TONE[translation.status]}
+              className={cn('inline-block h-1.5 w-1.5 rounded-full', DOT_TONE[translation.status])}
               aria-hidden
             />
           </div>
 
           <div className="no-drag flex items-center">
-            <button
+            <Button
               type="button"
+              variant={isSettingsOpen ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
               onClick={() => setIsSettingsOpen((current) => !current)}
-              className="glyph"
-              data-active={isSettingsOpen ? 'true' : 'false'}
               aria-label="设置"
               title="设置"
             >
-              <GearGlyph />
-            </button>
+              <Settings className="h-4 w-4" />
+            </Button>
           </div>
         </header>
 
-        {/* Settings drawer — minimal labels only */}
         {isSettingsOpen && (
-          <div className="no-drag z-10 px-4 pt-1 pb-4 animate-bubble">
+          <div className="no-drag border-b px-3 py-3">
             <form
-              className="glass-tile flex flex-col gap-2 p-3"
+              className="space-y-2"
               onSubmit={(event) => {
                 event.preventDefault()
                 void saveApiSettings()
               }}
             >
-              <SettingsField label="key">
-                <input
-                  className="glass-input"
+              <SettingsField label="Key">
+                <Input
                   type="password"
                   value={settingsDraft.apiKey}
                   placeholder="sk-..."
@@ -259,9 +299,8 @@ export default function App(): ReactElement {
                 />
               </SettingsField>
 
-              <SettingsField label="url">
-                <input
-                  className="glass-input"
+              <SettingsField label="URL">
+                <Input
                   type="url"
                   value={settingsDraft.baseUrl}
                   placeholder="https://api.openai.com/v1"
@@ -269,9 +308,8 @@ export default function App(): ReactElement {
                 />
               </SettingsField>
 
-              <SettingsField label="model">
-                <input
-                  className="glass-input"
+              <SettingsField label="Model">
+                <Input
                   type="text"
                   value={settingsDraft.model}
                   placeholder="gpt-4.1-mini"
@@ -279,65 +317,94 @@ export default function App(): ReactElement {
                 />
               </SettingsField>
 
-              <div className="mt-1 flex items-center justify-between">
+              <div className="flex items-center justify-between pt-1">
                 <span
-                  className={`font-sans text-[11px] ${
+                  className={cn(
+                    'text-xs',
                     settingsStatus === 'error'
-                      ? 'text-[#C73E3E]'
+                      ? 'text-destructive'
                       : settingsStatus === 'saved'
-                        ? 'text-sky-600'
-                        : 'text-navy-mist'
-                  }`}
+                        ? 'text-primary'
+                        : 'text-muted-foreground'
+                  )}
                 >
                   {settingsMessage || ' '}
                 </span>
-                <button
+                <Button
                   type="submit"
-                  className="btn-icon"
+                  size="sm"
                   disabled={settingsStatus === 'loading'}
-                  aria-label="保存"
-                  title="保存"
                 >
-                  <CheckGlyph />
-                </button>
+                  {settingsStatus === 'loading' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  保存
+                </Button>
               </div>
             </form>
           </div>
         )}
 
-        {/* Body — two glass cards, no labels */}
-        <div className="no-drag relative z-10 flex min-h-0 flex-1 flex-col gap-3 px-4 pt-1 pb-4">
-          {/* Source — textarea with floating submit button at bottom-right */}
-          <div className="glass-tile relative shrink-0">
-            <textarea
+        <div className="no-drag relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-3">
+          <div className="relative shrink-0">
+            <Textarea
               ref={textareaRef}
               data-manual-input="true"
               value={manualText}
               placeholder="键入或选中…"
-              className="glass-textarea pr-14"
+              className="min-h-[72px] resize-none pr-12"
               onChange={(event) => setManualText(event.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <button
+            <Button
               type="button"
+              size="icon"
+              className="absolute bottom-2 right-2 h-8 w-8"
               onClick={() => void submitManualText()}
               disabled={!canSubmit}
-              className="btn-icon absolute bottom-2.5 right-2.5"
               aria-label="翻译"
               title="翻译"
             >
-              <SwapGlyph />
-            </button>
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowRightLeft className="h-4 w-4" />
+              )}
+            </Button>
           </div>
 
-          {/* Rendition — translation result, no label */}
-          <div className="glass-tile glass-tile--blue relative flex-1 min-h-0 overflow-hidden">
-            <div className="absolute inset-0 overflow-y-auto px-4 py-3.5 select-text">
-              {renditionContent}
-            </div>
-          </div>
+          <Card className="relative flex-1 min-h-0 overflow-hidden bg-muted/40 shadow-none">
+            <ScrollArea className="h-full">
+              <div className="px-4 py-3.5 pr-12 pb-12 select-text">{renditionContent}</div>
+            </ScrollArea>
+            {translation.status === 'success' && translation.translatedText && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute bottom-2 right-2 h-8 w-8 shadow-sm"
+                onClick={() => void copyTranslatedText()}
+                aria-label={copyStatus === 'copied' ? '已复制' : '复制翻译'}
+                title={
+                  copyStatus === 'copied'
+                    ? '已复制'
+                    : copyStatus === 'error'
+                      ? '复制失败'
+                      : '复制'
+                }
+              >
+                {copyStatus === 'copied' ? (
+                  <Check className="h-4 w-4 text-primary" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            )}
+          </Card>
         </div>
-      </section>
+      </Card>
     </main>
   )
 }
@@ -349,86 +416,10 @@ interface SettingsFieldProps {
 
 function SettingsField({ label, children }: SettingsFieldProps): ReactElement {
   return (
-    <label className="flex items-center gap-3 rounded-[10px] bg-white/55 px-3 ring-1 ring-inset ring-[rgba(222,231,245,0.9)] focus-within:ring-[rgba(31,143,255,0.45)] focus-within:bg-white/85 transition">
-      <span className="w-[42px] shrink-0 font-mono text-[10px] uppercase tracking-wide text-navy-mute">
-        {label}
-      </span>
+    <label className="grid grid-cols-[60px_1fr] items-center gap-2">
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       {children}
     </label>
-  )
-}
-
-function CloseGlyph(): ReactElement {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 12 12"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
-    >
-      <path d="M3 3 L9 9" />
-      <path d="M9 3 L3 9" />
-    </svg>
-  )
-}
-
-function GearGlyph(): ReactElement {
-  // Heroicons cog-6-tooth — proper proportioned gear with rounded teeth and a center hub
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a6.759 6.759 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.213-1.281Z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  )
-}
-
-// double-arrow icon — semantically expresses translation as bidirectional swap
-function SwapGlyph(): ReactElement {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2.6 4.6 H10.4" />
-      <path d="M8 2.4 L10.4 4.6 L8 6.8" />
-      <path d="M11.4 9.4 H3.6" />
-      <path d="M6 7.2 L3.6 9.4 L6 11.6" />
-    </svg>
-  )
-}
-
-function CheckGlyph(): ReactElement {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M2.8 7.4 L5.6 10.2 L11.2 4" />
-    </svg>
   )
 }
 
