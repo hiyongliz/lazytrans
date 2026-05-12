@@ -1,13 +1,18 @@
 import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
 
-export type TranslationStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error'
+import type { TranslationErrorCode } from './translation-errors'
+
+export type TranslationStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error' | 'cancelled'
+export type TranslationPhase = 'reading-selection' | 'translating'
 
 export interface TranslationState {
   status: TranslationStatus
+  phase?: TranslationPhase
   sourceText: string
   translatedText: string
   errorMessage: string
+  errorCode?: TranslationErrorCode
   shortcutLabel?: string
   manualInputText?: string
 }
@@ -17,6 +22,7 @@ const WINDOW_HEIGHT = 520
 const WINDOW_MARGIN = 18
 const pendingTranslationStates = new WeakMap<BrowserWindow, TranslationState>()
 const pendingFlushHandlers = new WeakSet<BrowserWindow>()
+let lastWindowBounds: Electron.Rectangle | null = null
 
 interface ShowTranslateWindowOptions {
   focus?: boolean
@@ -57,6 +63,13 @@ export function createTranslateWindow(
 
   window.setAlwaysOnTop(true, 'floating')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  const rememberWindowBounds = (): void => {
+    if (!window.isDestroyed()) {
+      lastWindowBounds = window.getBounds()
+    }
+  }
+  window.on('resize', rememberWindowBounds)
+  window.on('move', rememberWindowBounds)
   window.on('close', (event) => {
     if (options.shouldHideOnClose?.() === false) {
       return
@@ -101,6 +114,8 @@ export function showTranslateWindow(
 
   if (options.reposition !== false) {
     positionWindowNearCursor(window)
+  } else if (!window.isVisible() && lastWindowBounds) {
+    restoreWindowBounds(window, lastWindowBounds)
   }
   window.setFocusable(true)
   window.setAlwaysOnTop(true, 'floating')
@@ -156,11 +171,14 @@ function positionWindowNearCursor(window: BrowserWindow): void {
   const cursorPoint = screen.getCursorScreenPoint()
   const display = screen.getDisplayNearestPoint(cursorPoint)
   const workArea = display.workArea
+  const bounds = window.getBounds()
+  const width = bounds.width || WINDOW_WIDTH
+  const height = bounds.height || WINDOW_HEIGHT
 
-  const preferredX = cursorPoint.x - Math.round(WINDOW_WIDTH / 2)
+  const preferredX = cursorPoint.x - Math.round(width / 2)
   const preferredY = cursorPoint.y + WINDOW_MARGIN
-  const maxX = workArea.x + workArea.width - WINDOW_WIDTH - WINDOW_MARGIN
-  const maxY = workArea.y + workArea.height - WINDOW_HEIGHT - WINDOW_MARGIN
+  const maxX = workArea.x + workArea.width - width - WINDOW_MARGIN
+  const maxY = workArea.y + workArea.height - height - WINDOW_MARGIN
 
   const x = clamp(preferredX, workArea.x + WINDOW_MARGIN, maxX)
   const y = clamp(preferredY, workArea.y + WINDOW_MARGIN, maxY)
@@ -168,8 +186,32 @@ function positionWindowNearCursor(window: BrowserWindow): void {
   window.setBounds({
     x,
     y,
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT
+    width,
+    height
+  })
+}
+
+function restoreWindowBounds(window: BrowserWindow, bounds: Electron.Rectangle): void {
+  const display = screen.getDisplayNearestPoint({
+    x: bounds.x + Math.round(bounds.width / 2),
+    y: bounds.y + Math.round(bounds.height / 2)
+  })
+  const workArea = display.workArea
+  const x = clamp(
+    bounds.x,
+    workArea.x + WINDOW_MARGIN,
+    workArea.x + workArea.width - bounds.width - WINDOW_MARGIN
+  )
+  const y = clamp(
+    bounds.y,
+    workArea.y + WINDOW_MARGIN,
+    workArea.y + workArea.height - bounds.height - WINDOW_MARGIN
+  )
+
+  window.setBounds({
+    ...bounds,
+    x,
+    y
   })
 }
 

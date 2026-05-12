@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  DEFAULT_OPENAI_BASE_URL,
+  DEFAULT_OPENAI_MODEL,
   TRANSLATE_SYSTEM_PROMPT,
   buildTranslateUserPrompt,
   buildChatCompletionsUrl,
   readTranslateConfig,
-  translateText
+  translateText,
+  translateTextStream
 } from './translator'
 
 describe('translator configuration', () => {
@@ -20,8 +23,8 @@ describe('translator configuration', () => {
 
     expect(config).toEqual({
       apiKey: 'test-key',
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4.1-mini'
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      model: DEFAULT_OPENAI_MODEL
     })
     expect(buildChatCompletionsUrl(config.baseUrl)).toBe(
       'https://api.openai.com/v1/chat/completions'
@@ -122,5 +125,97 @@ describe('translator configuration', () => {
         model: 'gpt-4.1-mini'
       })
     ).resolves.toBe('你好')
+  })
+
+  it('streams translated text deltas from chat completion chunks', async () => {
+    const chunks = [
+      'data: {"choices":[{"delta":{"content":"你"}}]}\n\n',
+      'data: {"choices":[{"delta":{"content":"好"}}]}\n\n',
+      'data: [DONE]\n\n'
+    ]
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body))).toEqual(
+        expect.objectContaining({
+          stream: true
+        })
+      )
+
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            for (const chunk of chunks) {
+              controller.enqueue(encoder.encode(chunk))
+            }
+            controller.close()
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream'
+          }
+        }
+      )
+    })
+    const deltas: string[] = []
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'hello',
+        {
+          onDelta: (delta) => deltas.push(delta)
+        },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).resolves.toBe('你好')
+    expect(deltas).toEqual(['你', '好'])
+  })
+
+  it('honors cancellation after streamed content has started', async () => {
+    const controller = new AbortController()
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        new ReadableStream({
+          start(streamController) {
+            streamController.enqueue(
+              encoder.encode('data: {"choices":[{"delta":{"content":"你"}}]}\n\n')
+            )
+            streamController.enqueue(encoder.encode('data: [DONE]\n\n'))
+            streamController.close()
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream'
+          }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'hello',
+        {
+          signal: controller.signal,
+          onDelta: () => controller.abort()
+        },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).rejects.toThrow('The operation was aborted')
   })
 })

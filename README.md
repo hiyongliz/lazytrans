@@ -80,6 +80,15 @@ POST {TRANSLATE_API_BASE_URL}/chat/completions
 
 应用内设置会保存到 macOS 用户数据目录，并优先于 `.env` 生效。保存后不需要重启应用，下一次翻译会直接使用新的接口配置。
 
+如果首次启动时没有配置 API Key，窗口会自动打开设置面板并聚焦到 Key 输入框。Base URL 和 Model 可以留空，应用会使用默认值：
+
+```text
+Base URL: https://api.openai.com/v1
+Model: gpt-4.1-mini
+```
+
+设置面板里的“测试”按钮会用当前配置发起一次轻量翻译请求，便于确认 Key、Base URL 和 Model 是否可用。
+
 ## macOS 辅助功能权限
 
 LazyTrans 通过 `osascript` 模拟 `Command + C` 获取当前选中文本。首次使用时，macOS 可能会要求授予辅助功能权限。
@@ -106,3 +115,5 @@ LazyTrans 通过 `osascript` 模拟 `Command + C` 获取当前选中文本。首
 没有选中文本时，窗口会显示“没有获取到选中文本”。
 
 窗口会一直保留输入框。选中文本时，输入框会自动填入选区并翻译；没有选中文本时，输入框会自动填入当前剪贴板文本。按 `Enter` 会提交翻译，`Shift + Enter` 会换行。
+
+翻译请求会流式显示结果。请求过程中可以点击停止按钮取消；结果区支持复制译文、复制原文、重新翻译，输入框支持一键清空。按 `Esc` 可以关闭悬浮窗口。

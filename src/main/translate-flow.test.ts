@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getSelectedTextMock = vi.hoisted(() => vi.fn())
-const translateTextMock = vi.hoisted(() => vi.fn())
+const translateTextStreamMock = vi.hoisted(() => vi.fn())
 const clipboardReadTextMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./selection', () => ({
@@ -9,7 +9,7 @@ vi.mock('./selection', () => ({
 }))
 
 vi.mock('./translator', () => ({
-  translateText: translateTextMock
+  translateTextStream: translateTextStreamMock
 }))
 
 vi.mock('electron', () => ({
@@ -23,7 +23,7 @@ import { runSelectionTranslateFlow } from './translate-flow'
 describe('selection translate flow', () => {
   beforeEach(() => {
     getSelectedTextMock.mockReset()
-    translateTextMock.mockReset()
+    translateTextStreamMock.mockReset()
     clipboardReadTextMock.mockReset()
   })
 
@@ -33,7 +33,7 @@ describe('selection translate flow', () => {
       events.push('capture-selection')
       return 'hello'
     })
-    translateTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('你好')
 
     await runSelectionTranslateFlow({
       show: () => events.push('show-window'),
@@ -50,7 +50,7 @@ describe('selection translate flow', () => {
       options?.beforeCopy?.()
       return 'hello'
     })
-    translateTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('你好')
 
     await runSelectionTranslateFlow(
       {
@@ -74,7 +74,7 @@ describe('selection translate flow', () => {
 
   it('focuses the window after selected text has been captured so the input remains editable', async () => {
     getSelectedTextMock.mockResolvedValue('hello')
-    translateTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('你好')
     const showMock = vi.fn()
 
     await runSelectionTranslateFlow({
@@ -143,7 +143,7 @@ describe('selection translate flow', () => {
     const sendStateMock = vi.fn()
     const showMock = vi.fn()
     getSelectedTextMock.mockResolvedValue('selected text')
-    translateTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('你好')
 
     await runSelectionTranslateFlow(
       {
@@ -156,14 +156,17 @@ describe('selection translate flow', () => {
     )
 
     expect(getSelectedTextMock).toHaveBeenCalled()
-    expect(translateTextMock).toHaveBeenCalledWith('selected text')
+    expect(translateTextStreamMock).toHaveBeenCalledWith(
+      'selected text',
+      expect.objectContaining({})
+    )
   })
 
   it('translates current manual input when no selected text was captured', async () => {
     const sendStateMock = vi.fn()
     const showMock = vi.fn()
     getSelectedTextMock.mockResolvedValue('')
-    translateTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('你好')
 
     await runSelectionTranslateFlow(
       {
@@ -178,11 +181,12 @@ describe('selection translate flow', () => {
     expect(showMock).toHaveBeenCalledWith(true)
     expect(sendStateMock).toHaveBeenCalledWith({
       status: 'loading',
+      phase: 'translating',
       sourceText: 'hello',
       translatedText: '',
       errorMessage: ''
     })
-    expect(translateTextMock).toHaveBeenCalledWith('hello')
+    expect(translateTextStreamMock).toHaveBeenCalledWith('hello', expect.objectContaining({}))
     expect(sendStateMock).toHaveBeenCalledWith({
       status: 'success',
       sourceText: 'hello',
@@ -208,6 +212,38 @@ describe('selection translate flow', () => {
 
     expect(getSelectedTextMock).toHaveBeenCalledWith({
       beforeCopy: beforeCopySelection
+    })
+  })
+
+  it('streams partial translated text while the request is still loading', async () => {
+    const sendStateMock = vi.fn()
+    getSelectedTextMock.mockResolvedValue('hello')
+    translateTextStreamMock.mockImplementation(async (_text: string, options?: {
+      onDelta?: (delta: string) => void
+    }) => {
+      options?.onDelta?.('你')
+      options?.onDelta?.('好')
+      return '你好'
+    })
+
+    await runSelectionTranslateFlow({
+      show: vi.fn(),
+      sendState: sendStateMock
+    })
+
+    expect(sendStateMock).toHaveBeenCalledWith({
+      status: 'loading',
+      phase: 'translating',
+      sourceText: 'hello',
+      translatedText: '你',
+      errorMessage: ''
+    })
+    expect(sendStateMock).toHaveBeenCalledWith({
+      status: 'loading',
+      phase: 'translating',
+      sourceText: 'hello',
+      translatedText: '你好',
+      errorMessage: ''
     })
   })
 })

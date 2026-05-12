@@ -1,16 +1,18 @@
 import { dirname, join } from 'node:path'
-import { app, globalShortcut, ipcMain } from 'electron'
+import { app, globalShortcut, ipcMain, shell } from 'electron'
 
 import { loadDotEnvFiles } from './env'
 import {
   applyApiSettingsToEnv,
+  completeApiSettings,
   readApiSettings,
   writeApiSettings,
   type ApiSettings
 } from './settings'
 import { registerTranslateShortcut } from './shortcuts'
+import { toUserFacingTranslationError } from './translation-errors'
 import { runSelectionTranslateFlow } from './translate-flow'
-import { readTranslateConfig, translateText } from './translator'
+import { readTranslateConfig, translateText, translateTextStream } from './translator'
 import {
     createTranslateWindow,
     readCurrentManualInputText,
@@ -25,6 +27,7 @@ let requestId = 0
 let activeShortcutLabel = 'Option + D'
 let isQuitting = false
 let manualInputText = ''
+let activeAbortController: AbortController | null = null
 
 const idleState: TranslationState = {
   status: 'idle',
@@ -81,6 +84,10 @@ ipcMain.handle('translation:manual-translate', async (_event, text: string) => {
   await handleManualTranslate(text)
 })
 
+ipcMain.handle('translation:cancel', () => {
+  handleCancelTranslation()
+})
+
 ipcMain.handle('translation:update-manual-input', (_event, text: string) => {
   manualInputText = text
 })
@@ -101,6 +108,19 @@ ipcMain.handle('settings:save-api', (_event, settings: unknown) => {
   return getEffectiveApiSettings()
 })
 
+ipcMain.handle('settings:test-api', async (_event, settings: unknown) => {
+  const apiSettings = parseSubmittedApiSettings(settings)
+  await translateText('hello', apiSettings)
+
+  return { ok: true }
+})
+
+ipcMain.handle('system:open-accessibility-settings', async () => {
+  await shell.openExternal(
+    'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+  )
+})
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
 })
@@ -117,7 +137,7 @@ app.on('activate', () => {
 async function handleTranslateShortcut(): Promise<void> {
   translateWindow = getTranslateWindow()
 
-  const currentRequestId = ++requestId
+  const { controller, id: currentRequestId } = beginTranslationRequest()
   const currentManualInputText = await readCurrentManualInputText(translateWindow)
 
   try {
@@ -141,19 +161,21 @@ async function handleTranslateShortcut(): Promise<void> {
         }
       },
       {
-        manualInputText: currentManualInputText || manualInputText
+        manualInputText: currentManualInputText || manualInputText,
+        signal: controller.signal
         // No beforeCopySelection: the BrowserWindow is created with focusable:false,
         // so the simulated ⌘C is delivered to the frontmost app without hiding ourselves.
       }
     )
   } catch (error) {
+    if (isAbortError(error)) {
+      return
+    }
+
     showTranslateWindow(translateWindow)
-    sendLatestState(currentRequestId, {
-      status: 'error',
-      sourceText: '',
-      translatedText: '',
-      errorMessage: formatErrorMessage(error)
-    })
+    sendLatestState(currentRequestId, buildErrorState(error))
+  } finally {
+    finishTranslationRequest(currentRequestId, controller)
   }
 }
 
@@ -173,17 +195,31 @@ async function handleManualTranslate(text: string): Promise<void> {
     return
   }
 
-  const currentRequestId = ++requestId
+  const { controller, id: currentRequestId } = beginTranslationRequest()
   showTranslateWindow(translateWindow, { focus: true, reposition: false })
   sendState({
     status: 'loading',
+    phase: 'translating',
     sourceText,
     translatedText: '',
     errorMessage: ''
   })
 
   try {
-    const translatedText = await translateText(sourceText)
+    let streamedText = ''
+    const translatedText = await translateTextStream(sourceText, {
+      signal: controller.signal,
+      onDelta: (delta) => {
+        streamedText += delta
+        sendLatestState(currentRequestId, {
+          status: 'loading',
+          phase: 'translating',
+          sourceText,
+          translatedText: streamedText,
+          errorMessage: ''
+        })
+      }
+    })
 
     sendLatestState(currentRequestId, {
       status: 'success',
@@ -192,12 +228,47 @@ async function handleManualTranslate(text: string): Promise<void> {
       errorMessage: ''
     })
   } catch (error) {
-    sendLatestState(currentRequestId, {
-      status: 'error',
-      sourceText,
-      translatedText: '',
-      errorMessage: formatErrorMessage(error)
-    })
+    if (isAbortError(error)) {
+      return
+    }
+
+    sendLatestState(currentRequestId, buildErrorState(error, sourceText))
+  } finally {
+    finishTranslationRequest(currentRequestId, controller)
+  }
+}
+
+function handleCancelTranslation(): void {
+  const controller = activeAbortController
+  if (!controller || controller.signal.aborted) {
+    return
+  }
+
+  controller.abort()
+  activeAbortController = null
+  requestId += 1
+  sendState({
+    status: 'cancelled',
+    sourceText: manualInputText.trim(),
+    translatedText: '',
+    errorMessage: '已取消'
+  })
+}
+
+function beginTranslationRequest(): { id: number; controller: AbortController } {
+  activeAbortController?.abort()
+  const controller = new AbortController()
+  activeAbortController = controller
+
+  return {
+    id: ++requestId,
+    controller
+  }
+}
+
+function finishTranslationRequest(requestToFinish: number, controller: AbortController): void {
+  if (requestToFinish === requestId && activeAbortController === controller) {
+    activeAbortController = null
   }
 }
 
@@ -264,39 +335,49 @@ function parseSubmittedApiSettings(value: unknown): ApiSettings {
   }
 
   const submitted = value as Partial<Record<keyof ApiSettings, unknown>>
-  const apiKey = typeof submitted.apiKey === 'string' ? submitted.apiKey.trim() : ''
-  const baseUrl = typeof submitted.baseUrl === 'string' ? submitted.baseUrl.trim() : ''
-  const model = typeof submitted.model === 'string' ? submitted.model.trim() : ''
+  const apiSettings = completeApiSettings({
+    apiKey: typeof submitted.apiKey === 'string' ? submitted.apiKey : '',
+    baseUrl: typeof submitted.baseUrl === 'string' ? submitted.baseUrl : '',
+    model: typeof submitted.model === 'string' ? submitted.model : ''
+  })
 
-  if (!apiKey) {
+  if (!apiSettings.apiKey) {
     throw new Error('请输入 API Key')
   }
 
-  if (!baseUrl) {
+  if (!apiSettings.baseUrl) {
     throw new Error('请输入 API 地址')
   }
 
   try {
-    new URL(baseUrl)
+    new URL(apiSettings.baseUrl)
   } catch {
     throw new Error('API 地址格式无效')
   }
 
-  if (!model) {
+  if (!apiSettings.model) {
     throw new Error('请输入模型名称')
   }
 
+  return apiSettings
+}
+
+function buildErrorState(error: unknown, sourceText = ''): TranslationState {
+  const userFacingError = toUserFacingTranslationError(error)
+
   return {
-    apiKey,
-    baseUrl,
-    model
+    status: 'error',
+    sourceText,
+    translatedText: '',
+    errorMessage: userFacingError.message,
+    errorCode: userFacingError.code
   }
 }
 
-function formatErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'AbortError'
   }
 
-  return String(error)
+  return error instanceof Error && error.name === 'AbortError'
 }

@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from './translator'
+
 export interface ApiSettings {
   apiKey: string
   baseUrl: string
@@ -44,6 +46,14 @@ export function applyApiSettingsToEnv(
 
   if (settings.model !== undefined) {
     env.TRANSLATE_MODEL = settings.model
+  }
+}
+
+export function completeApiSettings(settings: PartialApiSettings): ApiSettings {
+  return {
+    apiKey: settings.apiKey?.trim() ?? '',
+    baseUrl: settings.baseUrl?.trim() || DEFAULT_OPENAI_BASE_URL,
+    model: settings.model?.trim() || DEFAULT_OPENAI_MODEL
   }
 }
 

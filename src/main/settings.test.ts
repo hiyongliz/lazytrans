@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   applyApiSettingsToEnv,
+  completeApiSettings,
   readApiSettings,
   writeApiSettings,
   type ApiSettings
 } from './settings'
+import { DEFAULT_OPENAI_BASE_URL, DEFAULT_OPENAI_MODEL } from './translator'
 
 let tempDir: string | null = null
 
@@ -56,6 +58,20 @@ describe('api settings storage', () => {
       TRANSLATE_API_KEY: 'test-key',
       TRANSLATE_API_BASE_URL: 'https://api.example.com/v1',
       TRANSLATE_MODEL: 'test-model'
+    })
+  })
+
+  it('fills default URL and model when only an API key is submitted', () => {
+    expect(
+      completeApiSettings({
+        apiKey: 'test-key',
+        baseUrl: '',
+        model: ''
+      })
+    ).toEqual({
+      apiKey: 'test-key',
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      model: DEFAULT_OPENAI_MODEL
     })
   })
 })

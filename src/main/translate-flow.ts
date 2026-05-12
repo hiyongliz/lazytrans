@@ -1,7 +1,7 @@
 import { clipboard } from 'electron'
 
 import { getSelectedText } from './selection'
-import { translateText } from './translator'
+import { translateTextStream } from './translator'
 import type { TranslationState } from './window'
 
 export interface TranslateFlowWindow {
@@ -12,6 +12,7 @@ export interface TranslateFlowWindow {
 interface SelectionTranslateFlowOptions {
   manualInputText?: string
   beforeCopySelection?: () => void | Promise<void>
+  signal?: AbortSignal
 }
 
 export async function runSelectionTranslateFlow(
@@ -21,6 +22,7 @@ export async function runSelectionTranslateFlow(
   window.show(false)
   window.sendState({
     status: 'loading',
+    phase: 'reading-selection',
     sourceText: '',
     translatedText: '',
     errorMessage: '正在读取选中文本...'
@@ -33,13 +35,13 @@ export async function runSelectionTranslateFlow(
   window.show(true)
 
   if (sourceText) {
-    await translateSourceText(window, sourceText)
+    await translateSourceText(window, sourceText, options.signal)
     return
   }
 
   const manualInputText = options.manualInputText?.trim()
   if (manualInputText) {
-    await translateSourceText(window, manualInputText)
+    await translateSourceText(window, manualInputText, options.signal)
     return
   }
 
@@ -56,15 +58,49 @@ export async function runSelectionTranslateFlow(
   }
 }
 
-async function translateSourceText(window: TranslateFlowWindow, sourceText: string): Promise<void> {
+async function translateSourceText(
+  window: TranslateFlowWindow,
+  sourceText: string,
+  signal?: AbortSignal
+): Promise<void> {
   window.sendState({
     status: 'loading',
+    phase: 'translating',
     sourceText,
     translatedText: '',
     errorMessage: ''
   })
 
-  const translatedText = await translateText(sourceText)
+  let streamedText = ''
+  const slowTimer = setTimeout(() => {
+    if (streamedText || signal?.aborted) return
+    window.sendState({
+      status: 'loading',
+      phase: 'translating',
+      sourceText,
+      translatedText: '',
+      errorMessage: '请求较慢，正在等待模型响应...'
+    })
+  }, 3200)
+
+  let translatedText: string
+  try {
+    translatedText = await translateTextStream(sourceText, {
+      signal,
+      onDelta: (delta) => {
+        streamedText += delta
+        window.sendState({
+          status: 'loading',
+          phase: 'translating',
+          sourceText,
+          translatedText: streamedText,
+          errorMessage: ''
+        })
+      }
+    })
+  } finally {
+    clearTimeout(slowTimer)
+  }
 
   window.sendState({
     status: 'success',

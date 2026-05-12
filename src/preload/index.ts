@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('lazyTrans', {
   translateInput(text: string): Promise<void> {
     return ipcRenderer.invoke('translation:manual-translate', text)
   },
+  cancelTranslation(): Promise<void> {
+    return ipcRenderer.invoke('translation:cancel')
+  },
   updateManualInput(text: string): Promise<void> {
     return ipcRenderer.invoke('translation:update-manual-input', text)
   },
@@ -29,5 +32,11 @@ contextBridge.exposeInMainWorld('lazyTrans', {
   },
   saveApiSettings(settings: ApiSettings): Promise<ApiSettings> {
     return ipcRenderer.invoke('settings:save-api', settings)
+  },
+  testApiSettings(settings: ApiSettings): Promise<{ ok: boolean }> {
+    return ipcRenderer.invoke('settings:test-api', settings)
+  },
+  openAccessibilitySettings(): Promise<void> {
+    return ipcRenderer.invoke('system:open-accessibility-settings')
   }
 })
