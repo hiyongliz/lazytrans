@@ -11,9 +11,11 @@ import {
   Languages,
   Loader2,
   MoonStar,
+  Pause,
   RefreshCw,
   Settings,
   Square,
+  Volume2,
   X
 } from 'lucide-react'
 
@@ -33,6 +35,7 @@ import {
   shouldAutoOpenSettings,
   shouldSyncManualInput
 } from './app-behavior'
+import { cancelSpeech, speak } from './lib/speech'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -87,6 +90,7 @@ export default function App(): ReactElement {
   const [preferences, setPreferences] = useState<Preferences>(initialPreferences)
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
   const [currentModel, setCurrentModel] = useState('')
+  const [isSpeaking, setIsSpeaking] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const lastSyncedManualText = useRef('')
@@ -101,6 +105,8 @@ export default function App(): ReactElement {
   const settingsBusy = settingsStatus === 'loading' || settingsStatus === 'testing'
   const canRetry = !isLoading && Boolean(trimmedManual || translation.sourceText.trim())
   const canCopySource = Boolean(translation.sourceText.trim())
+  const playableText = (trimmedManual || translation.sourceText.trim())
+  const canPlayAudio = playableText.length > 0
   const canOpenSettingsFromError = shouldAutoOpenSettings(translation.errorCode)
   const canOpenAccessibilityFromError = translation.errorCode === 'selection-permission'
 
@@ -247,6 +253,7 @@ export default function App(): ReactElement {
   useEffect(() => {
     return () => {
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current)
+      cancelSpeech()
     }
   }, [])
 
@@ -392,6 +399,23 @@ export default function App(): ReactElement {
     setCurrentModel(saved.model)
     const prefs = await window.lazyTrans.getPreferences()
     setPreferences(prefs)
+  }
+
+  const togglePlayback = (): void => {
+    if (isSpeaking) {
+      cancelSpeech()
+      setIsSpeaking(false)
+      return
+    }
+    if (!playableText) return
+    const started = speak(playableText, {
+      onStart: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false)
+    })
+    if (!started) {
+      setIsSpeaking(false)
+    }
   }
 
   const copyText = async (text: string, target: Exclude<CopyStatus, 'idle' | 'error'>): Promise<void> => {
@@ -775,6 +799,23 @@ export default function App(): ReactElement {
               </Button>
             )}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
+              {canPlayAudio && (
+                <Button
+                  type="button"
+                  variant={isSpeaking ? 'default' : 'secondary'}
+                  size="icon"
+                  className="h-8 w-8 shadow-sm"
+                  onClick={togglePlayback}
+                  aria-label={isSpeaking ? '停止播放' : '播放原文'}
+                  title={isSpeaking ? '停止' : '播放'}
+                >
+                  {isSpeaking ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Volume2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
               {canRetry && (
                 <Button
                   type="button"
