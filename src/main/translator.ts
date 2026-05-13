@@ -1,3 +1,5 @@
+import { translateCache, type TranslateCache } from './translate-cache'
+
 export interface TranslateConfig {
   apiKey: string
   baseUrl: string
@@ -25,6 +27,7 @@ export const DEFAULT_OPENAI_MODEL = 'gpt-4.1-mini'
 export interface TranslateTextStreamOptions {
   signal?: AbortSignal
   onDelta?: (delta: string) => void
+  cache?: TranslateCache | null
 }
 
 export function readTranslateConfig(env: NodeJS.ProcessEnv = process.env): TranslateConfig {
@@ -132,6 +135,20 @@ export async function translateTextStream(
     return ''
   }
 
+  const cache = options.cache === undefined ? translateCache : options.cache
+  if (cache) {
+    const cached = cache.get({
+      text: sourceText,
+      model: config.model,
+      baseUrl: config.baseUrl
+    })
+    if (cached !== undefined) {
+      throwIfAborted(options.signal)
+      options.onDelta?.(cached)
+      return cached
+    }
+  }
+
   const controller = new AbortController()
   let timedOut = false
   const timeout = setTimeout(() => {
@@ -186,6 +203,17 @@ export async function translateTextStream(
     )
     if (!translatedText) {
       throw new Error('API response did not include translated text')
+    }
+
+    if (cache) {
+      cache.set(
+        {
+          text: sourceText,
+          model: config.model,
+          baseUrl: config.baseUrl
+        },
+        translatedText
+      )
     }
 
     return translatedText

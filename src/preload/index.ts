@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+import type { HistoryEntry } from '../main/history'
 import type { ApiSettings } from '../main/settings'
 import type { TranslationState } from '../main/window'
 
@@ -13,6 +14,14 @@ contextBridge.exposeInMainWorld('lazyTrans', {
 
     return (): void => {
       ipcRenderer.removeListener('translation:update', listener)
+    }
+  },
+  onOpenSettingsRequest(callback: () => void) {
+    const listener = (): void => callback()
+    ipcRenderer.on('app:open-settings-request', listener)
+
+    return (): void => {
+      ipcRenderer.removeListener('app:open-settings-request', listener)
     }
   },
   translateInput(text: string): Promise<void> {
@@ -38,5 +47,14 @@ contextBridge.exposeInMainWorld('lazyTrans', {
   },
   openAccessibilitySettings(): Promise<void> {
     return ipcRenderer.invoke('system:open-accessibility-settings')
+  },
+  listHistory(): Promise<HistoryEntry[]> {
+    return ipcRenderer.invoke('history:list')
+  },
+  clearHistory(): Promise<void> {
+    return ipcRenderer.invoke('history:clear')
+  },
+  translateHistoryEntry(id: string): Promise<void> {
+    return ipcRenderer.invoke('history:translate-id', id)
   }
 })

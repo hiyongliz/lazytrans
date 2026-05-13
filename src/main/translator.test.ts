@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { translateCache } from './translate-cache'
 import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
@@ -14,6 +15,7 @@ import {
 describe('translator configuration', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    translateCache.clear()
   })
 
   it('uses OpenAI defaults', () => {
@@ -217,5 +219,193 @@ describe('translator configuration', () => {
         }
       )
     ).rejects.toThrow('The operation was aborted')
+  })
+
+  it('serves cached translations without calling fetch and replays them via onDelta', async () => {
+    translateCache.set(
+      {
+        text: 'hello',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL
+      },
+      '你好'
+    )
+
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const deltas: string[] = []
+    await expect(
+      translateTextStream(
+        'hello',
+        { onDelta: (delta) => deltas.push(delta) },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).resolves.toBe('你好')
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(deltas).toEqual(['你好'])
+  })
+
+  it('stores successful streamed translations in the shared cache', async () => {
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        new ReadableStream({
+          start(streamController) {
+            streamController.enqueue(
+              encoder.encode('data: {"choices":[{"delta":{"content":"你好"}}]}\n\n')
+            )
+            streamController.enqueue(encoder.encode('data: [DONE]\n\n'))
+            streamController.close()
+          }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await translateTextStream(
+      'persisted',
+      {},
+      {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      }
+    )
+
+    expect(
+      translateCache.get({
+        text: 'persisted',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL
+      })
+    ).toBe('你好')
+  })
+
+  it('does not populate the cache when a stream is aborted mid-flight', async () => {
+    const controller = new AbortController()
+    const encoder = new TextEncoder()
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        new ReadableStream({
+          start(streamController) {
+            streamController.enqueue(
+              encoder.encode('data: {"choices":[{"delta":{"content":"你"}}]}\n\n')
+            )
+            streamController.enqueue(encoder.encode('data: [DONE]\n\n'))
+            streamController.close()
+          }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'aborted',
+        {
+          signal: controller.signal,
+          onDelta: () => controller.abort()
+        },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).rejects.toThrow('aborted')
+
+    expect(
+      translateCache.get({
+        text: 'aborted',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL
+      })
+    ).toBeUndefined()
+  })
+
+  it('does not write to the cache when the API responds with an error status', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({ error: { message: 'rate limit' } }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'failed',
+        {},
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).rejects.toThrow('rate limit')
+
+    expect(
+      translateCache.get({
+        text: 'failed',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL
+      })
+    ).toBeUndefined()
+  })
+
+  it('skips the cache entirely when the caller passes cache: null', async () => {
+    translateCache.set(
+      {
+        text: 'fresh',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL
+      },
+      'cached-value'
+    )
+
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'live-value' } }]
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'fresh',
+        { cache: null },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).resolves.toBe('live-value')
+
+    expect(fetchMock).toHaveBeenCalled()
   })
 })

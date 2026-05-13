@@ -29,6 +29,9 @@ describe('preload api', () => {
       saveApiSettings(settings: unknown): Promise<unknown>
       testApiSettings(settings: unknown): Promise<unknown>
       openAccessibilitySettings(): Promise<void>
+      listHistory(): Promise<unknown>
+      clearHistory(): Promise<void>
+      translateHistoryEntry(id: string): Promise<void>
     }
 
     await api.translateInput('hello')
@@ -47,6 +50,9 @@ describe('preload api', () => {
       model: ''
     })
     await api.openAccessibilitySettings()
+    await api.listHistory()
+    await api.clearHistory()
+    await api.translateHistoryEntry('id-1')
 
     expect(invokeMock).toHaveBeenCalledWith('translation:manual-translate', 'hello')
     expect(invokeMock).toHaveBeenCalledWith('translation:cancel')
@@ -64,5 +70,8 @@ describe('preload api', () => {
       model: ''
     })
     expect(invokeMock).toHaveBeenCalledWith('system:open-accessibility-settings')
+    expect(invokeMock).toHaveBeenCalledWith('history:list')
+    expect(invokeMock).toHaveBeenCalledWith('history:clear')
+    expect(invokeMock).toHaveBeenCalledWith('history:translate-id', 'id-1')
   })
 })

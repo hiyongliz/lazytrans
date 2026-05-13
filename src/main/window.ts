@@ -31,14 +31,17 @@ interface ShowTranslateWindowOptions {
 
 interface CreateTranslateWindowOptions {
   shouldHideOnClose?: () => boolean
+  initialBounds?: Electron.Rectangle | null
+  onBoundsChange?: (bounds: Electron.Rectangle) => void
 }
 
 export function createTranslateWindow(
   options: CreateTranslateWindowOptions = {}
 ): BrowserWindow {
+  const initialBounds = options.initialBounds ?? null
   const window = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
+    width: initialBounds?.width ?? WINDOW_WIDTH,
+    height: initialBounds?.height ?? WINDOW_HEIGHT,
     minWidth: 360,
     minHeight: 400,
     show: false,
@@ -61,12 +64,20 @@ export function createTranslateWindow(
     }
   })
 
+  if (initialBounds) {
+    lastWindowBounds = initialBounds
+    window.setBounds(initialBounds)
+  }
+
   window.setAlwaysOnTop(true, 'floating')
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   const rememberWindowBounds = (): void => {
-    if (!window.isDestroyed()) {
-      lastWindowBounds = window.getBounds()
+    if (window.isDestroyed()) {
+      return
     }
+    const bounds = window.getBounds()
+    lastWindowBounds = bounds
+    options.onBoundsChange?.(bounds)
   }
   window.on('resize', rememberWindowBounds)
   window.on('move', rememberWindowBounds)

@@ -15,9 +15,14 @@ import {
 } from 'lucide-react'
 
 import type { ApiSettings } from '../../main/settings'
+import type { HistoryEntry } from '../../main/history'
 import type { TranslationState } from '../../main/window'
 import lazyTransLogo from './assets/lazytrans-logo.png'
-import { shouldAutoOpenSettings, shouldSyncManualInput } from './app-behavior'
+import {
+  nextHistoryIndex,
+  shouldAutoOpenSettings,
+  shouldSyncManualInput
+} from './app-behavior'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -60,6 +65,8 @@ export default function App(): ReactElement {
   const [settingsStatus, setSettingsStatus] = useState<SettingsStatus>('idle')
   const [settingsMessage, setSettingsMessage] = useState('')
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const lastSyncedManualText = useRef('')
@@ -79,6 +86,25 @@ export default function App(): ReactElement {
   useEffect(() => {
     return window.lazyTrans.onTranslationUpdate(setTranslation)
   }, [])
+
+  useEffect(() => {
+    return window.lazyTrans.onOpenSettingsRequest(() => {
+      setIsSettingsOpen(true)
+    })
+  }, [])
+
+  useEffect(() => {
+    void window.lazyTrans.listHistory().then((entries) => {
+      setHistory(entries)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (translation.status !== 'success') return
+    void window.lazyTrans.listHistory().then((entries) => {
+      setHistory(entries)
+    })
+  }, [translation.status, translation.translatedText])
 
   useEffect(() => {
     void window.lazyTrans.updateManualInput(manualText)
@@ -192,9 +218,31 @@ export default function App(): ReactElement {
   }
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey) return
-    event.preventDefault()
-    void submitManualText()
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void submitManualText()
+      return
+    }
+
+    if (manualText.includes('\n')) return
+    if (history.length === 0) return
+
+    if (event.key === 'ArrowUp') {
+      const next = nextHistoryIndex(historyIndex, 'up', history.length)
+      if (next === null || next === historyIndex) return
+      event.preventDefault()
+      setHistoryIndex(next)
+      setManualText(history[next].sourceText)
+      return
+    }
+
+    if (event.key === 'ArrowDown') {
+      if (historyIndex === null) return
+      const next = nextHistoryIndex(historyIndex, 'down', history.length)
+      event.preventDefault()
+      setHistoryIndex(next)
+      setManualText(next === null ? '' : history[next].sourceText)
+    }
   }
 
   const closeWindow = (event?: React.MouseEvent<HTMLButtonElement>): void => {
@@ -248,6 +296,7 @@ export default function App(): ReactElement {
   const clearManualText = (): void => {
     setManualText('')
     lastSyncedManualText.current = ''
+    setHistoryIndex(null)
     textareaRef.current?.focus()
   }
 
@@ -494,7 +543,10 @@ export default function App(): ReactElement {
               value={manualText}
               placeholder="键入或选中…"
               className="min-h-[72px] resize-none pr-24"
-              onChange={(event) => setManualText(event.target.value)}
+              onChange={(event) => {
+                setManualText(event.target.value)
+                if (historyIndex !== null) setHistoryIndex(null)
+              }}
               onKeyDown={handleKeyDown}
             />
             {manualText && (

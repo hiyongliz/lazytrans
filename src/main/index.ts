@@ -1,7 +1,15 @@
+import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, globalShortcut, ipcMain, shell } from 'electron'
 
 import { loadDotEnvFiles } from './env'
+import {
+  appendHistory,
+  createHistoryEntry,
+  readHistory,
+  writeHistory,
+  type HistoryEntry
+} from './history'
 import {
   applyApiSettingsToEnv,
   completeApiSettings,
@@ -13,6 +21,7 @@ import { registerTranslateShortcut } from './shortcuts'
 import { toUserFacingTranslationError } from './translation-errors'
 import { runSelectionTranslateFlow } from './translate-flow'
 import { readTranslateConfig, translateText, translateTextStream } from './translator'
+import { createTrayMenu, type TrayHistoryEntry, type TrayMenuHandle } from './tray'
 import {
     createTranslateWindow,
     readCurrentManualInputText,
@@ -21,6 +30,7 @@ import {
     type TranslationState
 } from './window'
 import { ensureTranslateWindow } from './window-manager'
+import { readWindowState, writeWindowState } from './window-state'
 
 let translateWindow: Electron.BrowserWindow | null = null
 let requestId = 0
@@ -28,6 +38,10 @@ let activeShortcutLabel = 'Option + D'
 let isQuitting = false
 let manualInputText = ''
 let activeAbortController: AbortController | null = null
+let historyEntries: HistoryEntry[] = []
+let trayHandle: TrayMenuHandle | null = null
+let pendingBoundsWriteTimer: ReturnType<typeof setTimeout> | null = null
+const BOUNDS_WRITE_DEBOUNCE_MS = 300
 
 const idleState: TranslationState = {
   status: 'idle',
@@ -44,6 +58,7 @@ if (!hasSingleInstanceLock) {
 
 app.whenReady().then(() => {
   loadRuntimeEnv()
+  historyEntries = readHistory(getHistoryPath())
 
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide()
@@ -52,6 +67,8 @@ app.whenReady().then(() => {
   translateWindow = getTranslateWindow()
   sendState(idleState)
   showTranslateWindow(translateWindow, { focus: true, reposition: false })
+
+  setupTray()
 
   const registration = registerTranslateShortcut(globalShortcut, () => {
     console.info(`Translate shortcut triggered: ${activeShortcutLabel}`)
@@ -121,6 +138,27 @@ ipcMain.handle('system:open-accessibility-settings', async () => {
   )
 })
 
+ipcMain.handle('history:list', () => {
+  return historyEntries.map(toPublicHistoryEntry)
+})
+
+ipcMain.handle('history:clear', () => {
+  historyEntries = []
+  writeHistory(getHistoryPath(), historyEntries)
+  trayHandle?.refresh()
+})
+
+ipcMain.handle('history:translate-id', async (_event, id: unknown) => {
+  if (typeof id !== 'string') {
+    return
+  }
+  const entry = historyEntries.find((item) => item.id === id)
+  if (!entry) {
+    return
+  }
+  await handleManualTranslate(entry.sourceText)
+})
+
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
 })
@@ -157,6 +195,9 @@ async function handleTranslateShortcut(): Promise<void> {
           })
         },
         sendState: (state) => {
+          if (state.status === 'success' && state.translatedText) {
+            recordSuccessfulTranslation(state.sourceText, state.translatedText)
+          }
           sendLatestState(currentRequestId, state)
         }
       },
@@ -227,6 +268,7 @@ async function handleManualTranslate(text: string): Promise<void> {
       translatedText,
       errorMessage: ''
     })
+    recordSuccessfulTranslation(sourceText, translatedText)
   } catch (error) {
     if (isAbortError(error)) {
       return
@@ -293,8 +335,13 @@ function sendState(state: TranslationState): void {
 
 function getTranslateWindow(): Electron.BrowserWindow {
   return ensureTranslateWindow(translateWindow, () => {
+    const { bounds } = readWindowState(getWindowStatePath())
     const window = createTranslateWindow({
-      shouldHideOnClose: () => !isQuitting
+      shouldHideOnClose: () => !isQuitting,
+      initialBounds: bounds,
+      onBoundsChange: (nextBounds) => {
+        scheduleBoundsWrite(nextBounds)
+      }
     })
     window.on('closed', () => {
       if (translateWindow === window) {
@@ -303,6 +350,105 @@ function getTranslateWindow(): Electron.BrowserWindow {
     })
     return window
   })
+}
+
+function scheduleBoundsWrite(bounds: Electron.Rectangle): void {
+  if (pendingBoundsWriteTimer) {
+    clearTimeout(pendingBoundsWriteTimer)
+  }
+  pendingBoundsWriteTimer = setTimeout(() => {
+    pendingBoundsWriteTimer = null
+    try {
+      writeWindowState(getWindowStatePath(), { bounds })
+    } catch (error) {
+      console.error(`Failed to persist window state: ${formatErrorMessage(error)}`)
+    }
+  }, BOUNDS_WRITE_DEBOUNCE_MS)
+}
+
+function recordSuccessfulTranslation(sourceText: string, translatedText: string): void {
+  const config = readTranslateConfig()
+  const entry = createHistoryEntry({
+    sourceText,
+    translatedText,
+    model: config.model,
+    baseUrl: config.baseUrl
+  })
+  historyEntries = appendHistory(historyEntries, entry)
+  try {
+    writeHistory(getHistoryPath(), historyEntries)
+  } catch (error) {
+    console.error(`Failed to persist history: ${formatErrorMessage(error)}`)
+  }
+  trayHandle?.refresh()
+}
+
+function toPublicHistoryEntry(entry: HistoryEntry): HistoryEntry {
+  return { ...entry }
+}
+
+function setupTray(): void {
+  try {
+    trayHandle = createTrayMenu(getTrayIconPath(), {
+      onShow: () => {
+        translateWindow = getTranslateWindow()
+        showTranslateWindow(translateWindow, { focus: true, reposition: false })
+      },
+      onSettings: () => {
+        translateWindow = getTranslateWindow()
+        showTranslateWindow(translateWindow, { focus: true, reposition: false })
+        translateWindow.webContents.send('app:open-settings-request')
+      },
+      onTranslateHistoryEntry: (id) => {
+        const entry = historyEntries.find((item) => item.id === id)
+        if (!entry) {
+          return
+        }
+        translateWindow = getTranslateWindow()
+        showTranslateWindow(translateWindow, { focus: true, reposition: false })
+        void handleManualTranslate(entry.sourceText)
+      },
+      onClearHistory: () => {
+        historyEntries = []
+        try {
+          writeHistory(getHistoryPath(), historyEntries)
+        } catch (error) {
+          console.error(`Failed to clear history file: ${formatErrorMessage(error)}`)
+        }
+        trayHandle?.refresh()
+      },
+      onQuit: () => {
+        app.quit()
+      },
+      getRecentHistory: () =>
+        historyEntries.map<TrayHistoryEntry>((entry) => ({
+          id: entry.id,
+          sourceText: entry.sourceText
+        }))
+    })
+  } catch (error) {
+    console.error(`Failed to create tray: ${formatErrorMessage(error)}`)
+  }
+}
+
+function getTrayIconPath(): string {
+  const devIcon = join(app.getAppPath(), 'build/icon.icns')
+  if (existsSync(devIcon)) {
+    return devIcon
+  }
+  const resourcesIcon = join(process.resourcesPath, 'icon.icns')
+  if (existsSync(resourcesIcon)) {
+    return resourcesIcon
+  }
+  return ''
+}
+
+function getHistoryPath(): string {
+  return join(app.getPath('userData'), 'history.json')
+}
+
+function getWindowStatePath(): string {
+  return join(app.getPath('userData'), 'window-state.json')
 }
 
 function loadRuntimeEnv(): void {
@@ -380,4 +526,12 @@ function isAbortError(error: unknown): boolean {
   }
 
   return error instanceof Error && error.name === 'AbortError'
+}
+
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
 }

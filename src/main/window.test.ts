@@ -19,6 +19,9 @@ const BrowserWindowMock = vi.hoisted(() =>
       loadURL: vi.fn(),
       loadFile: vi.fn(),
       hide: vi.fn(),
+      setBounds: vi.fn(),
+      getBounds: vi.fn(() => ({ x: 10, y: 20, width: 460, height: 520 })),
+      isDestroyed: vi.fn(() => false),
       on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
         listeners.set(event, callback)
       }),
@@ -79,6 +82,46 @@ describe('translate window lifecycle', () => {
 
     expect(event.preventDefault).not.toHaveBeenCalled()
     expect(window.hide).not.toHaveBeenCalled()
+  })
+
+  it('applies initialBounds to the window when provided', () => {
+    browserWindowInstances.length = 0
+    const window = createTranslateWindow({
+      initialBounds: { x: 200, y: 300, width: 500, height: 600 }
+    }) as never as {
+      setBounds: ReturnType<typeof vi.fn>
+    }
+
+    expect(window.setBounds).toHaveBeenCalledWith({
+      x: 200,
+      y: 300,
+      width: 500,
+      height: 600
+    })
+  })
+
+  it('invokes onBoundsChange when the user resizes or moves the window', () => {
+    browserWindowInstances.length = 0
+    const onBoundsChange = vi.fn()
+    const window = createTranslateWindow({
+      onBoundsChange
+    }) as never as {
+      listeners: Map<string, () => void>
+      getBounds: ReturnType<typeof vi.fn>
+    }
+
+    window.getBounds.mockReturnValue({ x: 5, y: 6, width: 100, height: 200 })
+    window.listeners.get('resize')?.()
+    expect(onBoundsChange).toHaveBeenCalledWith({
+      x: 5,
+      y: 6,
+      width: 100,
+      height: 200
+    })
+
+    window.getBounds.mockReturnValue({ x: 7, y: 8, width: 100, height: 200 })
+    window.listeners.get('move')?.()
+    expect(onBoundsChange).toHaveBeenCalledTimes(2)
   })
 })
 
