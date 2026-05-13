@@ -93,6 +93,98 @@ export async function testTranslateConnection(
   )
 }
 
+const PHONETIC_TIMEOUT_MS = 6000
+const PHONETIC_SYSTEM_PROMPT =
+  '你是英文发音助手。只输出输入英文单词的 IPA 国际音标，包含两侧斜杠，例如 /həˈloʊ/。不要加任何其他文字、解释、标点或换行。如果输入不是常规英文单词，输出空字符串。'
+
+export function isSingleEnglishWord(text: string): boolean {
+  const trimmed = text.trim()
+  if (trimmed.length === 0 || trimmed.length > 40) {
+    return false
+  }
+  return /^[A-Za-z][A-Za-z'-]*[A-Za-z]?$/.test(trimmed)
+}
+
+export async function fetchPhonetic(
+  word: string,
+  options: { signal?: AbortSignal } = {},
+  config: TranslateConfig = readTranslateConfig()
+): Promise<string | undefined> {
+  const trimmed = word.trim()
+  if (!isSingleEnglishWord(trimmed) || !config.apiKey.trim()) {
+    return undefined
+  }
+
+  const cached = translateCache.get({
+    text: trimmed.toLowerCase(),
+    model: config.model,
+    baseUrl: config.baseUrl,
+    kind: 'phonetic'
+  })
+  if (cached !== undefined) {
+    return cached || undefined
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), PHONETIC_TIMEOUT_MS)
+  const abortFromCaller = (): void => controller.abort()
+  if (options.signal?.aborted) {
+    controller.abort()
+  } else {
+    options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  }
+
+  try {
+    const response = await fetch(buildChatCompletionsUrl(config.baseUrl), {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: PHONETIC_SYSTEM_PROMPT },
+          { role: 'user', content: trimmed }
+        ],
+        temperature: 0,
+        stream: false
+      })
+    })
+
+    if (!response.ok) {
+      return undefined
+    }
+
+    const data = (await response.json().catch(() => ({}))) as ChatCompletionResponse
+    const content = data.choices?.[0]?.message?.content?.trim() ?? ''
+    const phonetic = extractPhonetic(content)
+
+    translateCache.set(
+      {
+        text: trimmed.toLowerCase(),
+        model: config.model,
+        baseUrl: config.baseUrl,
+        kind: 'phonetic'
+      },
+      phonetic ?? ''
+    )
+
+    return phonetic
+  } catch {
+    return undefined
+  } finally {
+    clearTimeout(timeout)
+    options.signal?.removeEventListener('abort', abortFromCaller)
+  }
+}
+
+function extractPhonetic(content: string): string | undefined {
+  const match = content.match(/\/[^/\n]+\//)
+  return match?.[0]
+}
+
 export async function translateTextStream(
   text: string,
   options: TranslateTextStreamOptions = {},

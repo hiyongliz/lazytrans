@@ -29,6 +29,8 @@ import { registerTranslateShortcut } from './shortcuts'
 import { toUserFacingTranslationError } from './translation-errors'
 import { runSelectionTranslateFlow } from './translate-flow'
 import {
+  fetchPhonetic,
+  isSingleEnglishWord,
   readTranslateConfig,
   testTranslateConnection,
   translateTextStream
@@ -288,6 +290,25 @@ async function handleManualTranslate(text: string): Promise<void> {
 
   try {
     let streamedText = ''
+    let phonetic: string | undefined
+
+    const phoneticPromise = isSingleEnglishWord(sourceText)
+      ? fetchPhonetic(sourceText, { signal: controller.signal })
+          .then((value) => {
+            if (!value || controller.signal.aborted) return
+            phonetic = value
+            sendLatestState(currentRequestId, {
+              status: 'loading',
+              phase: 'translating',
+              sourceText,
+              translatedText: streamedText,
+              errorMessage: '',
+              phonetic
+            })
+          })
+          .catch(() => undefined)
+      : Promise.resolve()
+
     const translatedText = await translateTextStream(sourceText, {
       signal: controller.signal,
       direction: preferences.manualDirection,
@@ -298,16 +319,20 @@ async function handleManualTranslate(text: string): Promise<void> {
           phase: 'translating',
           sourceText,
           translatedText: streamedText,
-          errorMessage: ''
+          errorMessage: '',
+          ...(phonetic !== undefined ? { phonetic } : {})
         })
       }
     })
+
+    await phoneticPromise
 
     sendLatestState(currentRequestId, {
       status: 'success',
       sourceText,
       translatedText,
-      errorMessage: ''
+      errorMessage: '',
+      ...(phonetic !== undefined ? { phonetic } : {})
     })
     recordSuccessfulTranslation(sourceText, translatedText)
   } catch (error) {

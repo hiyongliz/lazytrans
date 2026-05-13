@@ -1,7 +1,12 @@
 import { clipboard } from 'electron'
 
 import { getSelectedText } from './selection'
-import { translateTextStream, type TranslateDirection } from './translator'
+import {
+  fetchPhonetic,
+  isSingleEnglishWord,
+  translateTextStream,
+  type TranslateDirection
+} from './translator'
 import type { TranslationState } from './window'
 
 export interface TranslateFlowWindow {
@@ -74,6 +79,7 @@ async function translateSourceText(
   })
 
   let streamedText = ''
+  let phonetic: string | undefined
   const slowTimer = setTimeout(() => {
     if (streamedText || signal?.aborted) return
     window.sendState({
@@ -81,9 +87,27 @@ async function translateSourceText(
       phase: 'translating',
       sourceText,
       translatedText: '',
-      errorMessage: '请求较慢，正在等待模型响应...'
+      errorMessage: '请求较慢，正在等待模型响应...',
+      ...(phonetic !== undefined ? { phonetic } : {})
     })
   }, 3200)
+
+  const phoneticPromise = isSingleEnglishWord(sourceText)
+    ? fetchPhonetic(sourceText, { signal })
+        .then((value) => {
+          if (!value || signal?.aborted) return
+          phonetic = value
+          window.sendState({
+            status: 'loading',
+            phase: 'translating',
+            sourceText,
+            translatedText: streamedText,
+            errorMessage: '',
+            phonetic
+          })
+        })
+        .catch(() => undefined)
+    : Promise.resolve()
 
   let translatedText: string
   try {
@@ -97,7 +121,8 @@ async function translateSourceText(
           phase: 'translating',
           sourceText,
           translatedText: streamedText,
-          errorMessage: ''
+          errorMessage: '',
+          ...(phonetic !== undefined ? { phonetic } : {})
         })
       }
     })
@@ -105,10 +130,13 @@ async function translateSourceText(
     clearTimeout(slowTimer)
   }
 
+  await phoneticPromise
+
   window.sendState({
     status: 'success',
     sourceText,
     translatedText,
-    errorMessage: ''
+    errorMessage: '',
+    ...(phonetic !== undefined ? { phonetic } : {})
   })
 }

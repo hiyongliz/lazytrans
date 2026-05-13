@@ -15,6 +15,7 @@ export interface TranslationState {
   errorCode?: TranslationErrorCode
   shortcutLabel?: string
   manualInputText?: string
+  phonetic?: string
 }
 
 const WINDOW_WIDTH = 460

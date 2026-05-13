@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const getSelectedTextMock = vi.hoisted(() => vi.fn())
 const translateTextStreamMock = vi.hoisted(() => vi.fn())
+const fetchPhoneticMock = vi.hoisted(() => vi.fn())
+const isSingleEnglishWordMock = vi.hoisted(() => vi.fn(() => false))
 const clipboardReadTextMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./selection', () => ({
@@ -9,7 +11,9 @@ vi.mock('./selection', () => ({
 }))
 
 vi.mock('./translator', () => ({
-  translateTextStream: translateTextStreamMock
+  translateTextStream: translateTextStreamMock,
+  fetchPhonetic: fetchPhoneticMock,
+  isSingleEnglishWord: isSingleEnglishWordMock
 }))
 
 vi.mock('electron', () => ({
@@ -24,6 +28,9 @@ describe('selection translate flow', () => {
   beforeEach(() => {
     getSelectedTextMock.mockReset()
     translateTextStreamMock.mockReset()
+    fetchPhoneticMock.mockReset()
+    isSingleEnglishWordMock.mockReset()
+    isSingleEnglishWordMock.mockReturnValue(false)
     clipboardReadTextMock.mockReset()
   })
 
@@ -245,5 +252,46 @@ describe('selection translate flow', () => {
       translatedText: '你好',
       errorMessage: ''
     })
+  })
+
+  it('attaches phonetic metadata to the final state when input is a single English word', async () => {
+    const sendStateMock = vi.fn()
+    getSelectedTextMock.mockResolvedValue('hello')
+    translateTextStreamMock.mockResolvedValue('你好')
+    isSingleEnglishWordMock.mockReturnValue(true)
+    fetchPhoneticMock.mockResolvedValue('/həˈloʊ/')
+
+    await runSelectionTranslateFlow({
+      show: vi.fn(),
+      sendState: sendStateMock
+    })
+
+    expect(sendStateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'success',
+        sourceText: 'hello',
+        translatedText: '你好',
+        phonetic: '/həˈloʊ/'
+      })
+    )
+  })
+
+  it('does not attach phonetic when the source is not a single English word', async () => {
+    const sendStateMock = vi.fn()
+    getSelectedTextMock.mockResolvedValue('hello world')
+    translateTextStreamMock.mockResolvedValue('你好世界')
+    isSingleEnglishWordMock.mockReturnValue(false)
+    fetchPhoneticMock.mockResolvedValue('/should-not-be-called/')
+
+    await runSelectionTranslateFlow({
+      show: vi.fn(),
+      sendState: sendStateMock
+    })
+
+    expect(fetchPhoneticMock).not.toHaveBeenCalled()
+    const finalCall = sendStateMock.mock.calls.find(
+      (call) => call[0]?.status === 'success'
+    )
+    expect(finalCall?.[0]?.phonetic).toBeUndefined()
   })
 })

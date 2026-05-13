@@ -25,7 +25,6 @@ import type {
   TranslateDirection
 } from '../../main/preferences'
 import type { TranslationState } from '../../main/window'
-import lazyTransLogo from './assets/lazytrans-logo.png'
 import {
   cycleDirection,
   displayDirection,
@@ -422,14 +421,20 @@ export default function App(): ReactElement {
   }
 
   const renditionContent = useMemo<ReactElement>(() => {
+    const phoneticBlock = translation.phonetic ? (
+      <p className="mb-1.5 font-mono text-sm text-muted-foreground select-text">
+        {translation.phonetic}
+      </p>
+    ) : null
+
     if (translation.status === 'success' && translation.translatedText) {
       return (
-        <p
-          key={translation.translatedText}
-          className="text-base leading-relaxed text-foreground whitespace-pre-wrap"
-        >
-          {translation.translatedText}
-        </p>
+        <div key={translation.translatedText}>
+          {phoneticBlock}
+          <p className="text-base leading-relaxed text-foreground whitespace-pre-wrap">
+            {translation.translatedText}
+          </p>
+        </div>
       )
     }
 
@@ -444,9 +449,12 @@ export default function App(): ReactElement {
     if (isLoading) {
       if (translation.translatedText) {
         return (
-          <p className="text-base leading-relaxed text-muted-foreground whitespace-pre-wrap">
-            {translation.translatedText}
-          </p>
+          <div>
+            {phoneticBlock}
+            <p className="text-base leading-relaxed text-muted-foreground whitespace-pre-wrap">
+              {translation.translatedText}
+            </p>
+          </div>
         )
       }
       if (translation.errorMessage) {
@@ -458,6 +466,7 @@ export default function App(): ReactElement {
       }
       return (
         <div className="flex flex-col gap-2.5">
+          {phoneticBlock}
           <Skeleton className="h-3.5 w-[92%]" />
           <Skeleton className="h-3.5 w-[76%]" />
           <Skeleton className="h-3.5 w-[54%]" />
@@ -492,6 +501,7 @@ export default function App(): ReactElement {
     isLoading,
     shortcutLabel,
     translation.errorMessage,
+    translation.phonetic,
     translation.status,
     translation.translatedText
   ])
@@ -540,7 +550,6 @@ export default function App(): ReactElement {
           </div>
 
           <div className="pointer-events-none flex items-center gap-2">
-            <img src={lazyTransLogo} alt="lazytrans" className="h-6 w-6" />
             <span
               className={cn('inline-block h-1.5 w-1.5 rounded-full', DOT_TONE[translation.status])}
               aria-hidden

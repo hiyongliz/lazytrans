@@ -3,6 +3,7 @@ export interface TranslateCacheKey {
   model: string
   baseUrl: string
   direction?: string
+  kind?: string
 }
 
 const DEFAULT_CAPACITY = 100
@@ -59,7 +60,13 @@ export class TranslateCache {
 }
 
 function serializeKey(key: TranslateCacheKey): string {
-  return [key.model, key.baseUrl, key.direction ?? 'auto', key.text].join('\t')
+  return [
+    key.kind ?? 'translation',
+    key.model,
+    key.baseUrl,
+    key.direction ?? 'auto',
+    key.text
+  ].join('\t')
 }
 
 export const translateCache = new TranslateCache()

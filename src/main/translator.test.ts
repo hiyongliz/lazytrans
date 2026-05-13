@@ -8,6 +8,8 @@ import {
   buildSystemPrompt,
   buildTranslateUserPrompt,
   buildChatCompletionsUrl,
+  fetchPhonetic,
+  isSingleEnglishWord,
   readTranslateConfig,
   testTranslateConnection,
   translateText,
@@ -580,5 +582,160 @@ describe('translator configuration', () => {
         model: DEFAULT_OPENAI_MODEL
       })
     ).rejects.toThrow('Invalid API key')
+  })
+})
+
+describe('single english word detection', () => {
+  it('accepts plain lowercase and capitalized words', () => {
+    expect(isSingleEnglishWord('hello')).toBe(true)
+    expect(isSingleEnglishWord('World')).toBe(true)
+  })
+
+  it('accepts words with hyphens or apostrophes', () => {
+    expect(isSingleEnglishWord("don't")).toBe(true)
+    expect(isSingleEnglishWord('state-of-the-art')).toBe(true)
+  })
+
+  it('rejects phrases with spaces', () => {
+    expect(isSingleEnglishWord('hello world')).toBe(false)
+  })
+
+  it('rejects non-Latin scripts', () => {
+    expect(isSingleEnglishWord('你好')).toBe(false)
+    expect(isSingleEnglishWord('café')).toBe(false)
+  })
+
+  it('rejects empty or punctuation-only input', () => {
+    expect(isSingleEnglishWord('')).toBe(false)
+    expect(isSingleEnglishWord('!!!')).toBe(false)
+  })
+
+  it('rejects very long sequences that are clearly not a word', () => {
+    expect(isSingleEnglishWord('a'.repeat(50))).toBe(false)
+  })
+})
+
+describe('fetchPhonetic', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    translateCache.clear()
+  })
+
+  it('returns undefined for non-word input without calling fetch', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      fetchPhonetic('hello world', undefined, {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBeUndefined()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('extracts a slash-delimited IPA token from the model response', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '/həˈloʊ/' } }]
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      fetchPhonetic('hello', undefined, {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBe('/həˈloʊ/')
+  })
+
+  it('returns undefined when the model produces no slashes', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '' } }]
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      fetchPhonetic('asdfqwerty', undefined, {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBeUndefined()
+  })
+
+  it('caches phonetic results separately from translations under the same word', async () => {
+    translateCache.set(
+      {
+        text: 'hello',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        direction: 'auto'
+      },
+      '你好'
+    )
+
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '/həˈloʊ/' } }]
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await fetchPhonetic('hello', undefined, {
+      apiKey: 'test-key',
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      model: DEFAULT_OPENAI_MODEL
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // Second call hits the cache and does not fetch again.
+    await fetchPhonetic('hello', undefined, {
+      apiKey: 'test-key',
+      baseUrl: DEFAULT_OPENAI_BASE_URL,
+      model: DEFAULT_OPENAI_MODEL
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('swallows network errors and returns undefined so the main translation still surfaces', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error('network down')
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      fetchPhonetic('hello', undefined, {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBeUndefined()
   })
 })
