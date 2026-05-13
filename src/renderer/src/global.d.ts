@@ -1,4 +1,5 @@
 import type { HistoryEntry } from '../../main/history'
+import type { Preferences } from '../../main/preferences'
 import type { ApiSettings } from '../../main/settings'
 import type { TranslationState } from '../../main/window'
 
@@ -20,6 +21,8 @@ declare global {
       listHistory: () => Promise<HistoryEntry[]>
       clearHistory: () => Promise<void>
       translateHistoryEntry: (id: string) => Promise<void>
+      getPreferences: () => Promise<Preferences>
+      patchPreferences: (patch: Partial<Preferences>) => Promise<Preferences>
     }
   }
 }

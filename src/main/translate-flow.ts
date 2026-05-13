@@ -1,7 +1,7 @@
 import { clipboard } from 'electron'
 
 import { getSelectedText } from './selection'
-import { translateTextStream } from './translator'
+import { translateTextStream, type TranslateDirection } from './translator'
 import type { TranslationState } from './window'
 
 export interface TranslateFlowWindow {
@@ -13,6 +13,7 @@ interface SelectionTranslateFlowOptions {
   manualInputText?: string
   beforeCopySelection?: () => void | Promise<void>
   signal?: AbortSignal
+  direction?: TranslateDirection
 }
 
 export async function runSelectionTranslateFlow(
@@ -35,13 +36,13 @@ export async function runSelectionTranslateFlow(
   window.show(true)
 
   if (sourceText) {
-    await translateSourceText(window, sourceText, options.signal)
+    await translateSourceText(window, sourceText, options.signal, options.direction)
     return
   }
 
   const manualInputText = options.manualInputText?.trim()
   if (manualInputText) {
-    await translateSourceText(window, manualInputText, options.signal)
+    await translateSourceText(window, manualInputText, options.signal, options.direction)
     return
   }
 
@@ -61,7 +62,8 @@ export async function runSelectionTranslateFlow(
 async function translateSourceText(
   window: TranslateFlowWindow,
   sourceText: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  direction?: TranslateDirection
 ): Promise<void> {
   window.sendState({
     status: 'loading',
@@ -87,6 +89,7 @@ async function translateSourceText(
   try {
     translatedText = await translateTextStream(sourceText, {
       signal,
+      direction,
       onDelta: (delta) => {
         streamedText += delta
         window.sendState({

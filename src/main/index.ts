@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { app, globalShortcut, ipcMain, shell } from 'electron'
+import { app, dialog, globalShortcut, ipcMain, shell } from 'electron'
 
 import { loadDotEnvFiles } from './env'
 import {
@@ -10,6 +10,14 @@ import {
   writeHistory,
   type HistoryEntry
 } from './history'
+import {
+  DEFAULT_PREFERENCES,
+  mergePreferences,
+  promoteRecentModel,
+  readPreferences,
+  writePreferences,
+  type Preferences
+} from './preferences'
 import {
   applyApiSettingsToEnv,
   completeApiSettings,
@@ -39,6 +47,7 @@ let isQuitting = false
 let manualInputText = ''
 let activeAbortController: AbortController | null = null
 let historyEntries: HistoryEntry[] = []
+let preferences: Preferences = { ...DEFAULT_PREFERENCES }
 let trayHandle: TrayMenuHandle | null = null
 let pendingBoundsWriteTimer: ReturnType<typeof setTimeout> | null = null
 const BOUNDS_WRITE_DEBOUNCE_MS = 300
@@ -59,6 +68,7 @@ if (!hasSingleInstanceLock) {
 app.whenReady().then(() => {
   loadRuntimeEnv()
   historyEntries = readHistory(getHistoryPath())
+  preferences = readPreferences(getPreferencesPath())
 
   if (process.platform === 'darwin' && app.dock) {
     app.dock.hide()
@@ -79,6 +89,10 @@ app.whenReady().then(() => {
     activeShortcutLabel = registration.label
     console.info(`Translate shortcut registered: ${registration.label}`)
     sendState(idleState)
+
+    if (registration.usedFallback && !preferences.shortcutDowngradeAcknowledged) {
+      void showShortcutDowngradeDialog(registration.label)
+    }
 
     return
   }
@@ -122,6 +136,15 @@ ipcMain.handle('settings:save-api', (_event, settings: unknown) => {
   writeApiSettings(getApiSettingsPath(), apiSettings)
   applyApiSettingsToEnv(apiSettings)
 
+  preferences = mergePreferences(preferences, {
+    recentModels: promoteRecentModel(preferences.recentModels, apiSettings.model)
+  })
+  try {
+    writePreferences(getPreferencesPath(), preferences)
+  } catch (error) {
+    console.error(`Failed to persist preferences: ${formatErrorMessage(error)}`)
+  }
+
   return getEffectiveApiSettings()
 })
 
@@ -157,6 +180,18 @@ ipcMain.handle('history:translate-id', async (_event, id: unknown) => {
     return
   }
   await handleManualTranslate(entry.sourceText)
+})
+
+ipcMain.handle('prefs:get', () => preferences)
+
+ipcMain.handle('prefs:patch', (_event, patch: unknown) => {
+  preferences = mergePreferences(preferences, normalizePreferencePatch(patch))
+  try {
+    writePreferences(getPreferencesPath(), preferences)
+  } catch (error) {
+    console.error(`Failed to persist preferences: ${formatErrorMessage(error)}`)
+  }
+  return preferences
 })
 
 app.on('will-quit', () => {
@@ -203,7 +238,8 @@ async function handleTranslateShortcut(): Promise<void> {
       },
       {
         manualInputText: currentManualInputText || manualInputText,
-        signal: controller.signal
+        signal: controller.signal,
+        direction: preferences.manualDirection
         // No beforeCopySelection: the BrowserWindow is created with focusable:false,
         // so the simulated ⌘C is delivered to the frontmost app without hiding ourselves.
       }
@@ -250,6 +286,7 @@ async function handleManualTranslate(text: string): Promise<void> {
     let streamedText = ''
     const translatedText = await translateTextStream(sourceText, {
       signal: controller.signal,
+      direction: preferences.manualDirection,
       onDelta: (delta) => {
         streamedText += delta
         sendLatestState(currentRequestId, {
@@ -449,6 +486,67 @@ function getHistoryPath(): string {
 
 function getWindowStatePath(): string {
   return join(app.getPath('userData'), 'window-state.json')
+}
+
+function getPreferencesPath(): string {
+  return join(app.getPath('userData'), 'preferences.json')
+}
+
+async function showShortcutDowngradeDialog(label: string): Promise<void> {
+  try {
+    await dialog.showMessageBox({
+      type: 'info',
+      message: 'LazyTrans 已切换备用快捷键',
+      detail: `Option + D 可能被系统或其他应用占用，已自动改用 ${label} 触发翻译。你也可以在系统设置中释放 Option + D 后重启 LazyTrans 恢复默认快捷键。`,
+      buttons: ['知道了']
+    })
+  } catch (error) {
+    console.error(`Failed to show shortcut downgrade dialog: ${formatErrorMessage(error)}`)
+    return
+  }
+
+  preferences = mergePreferences(preferences, {
+    shortcutDowngradeAcknowledged: true
+  })
+  try {
+    writePreferences(getPreferencesPath(), preferences)
+  } catch (error) {
+    console.error(`Failed to persist downgrade ack: ${formatErrorMessage(error)}`)
+  }
+}
+
+function normalizePreferencePatch(value: unknown): Partial<Preferences> {
+  if (!value || typeof value !== 'object') {
+    return {}
+  }
+
+  const raw = value as Partial<Record<keyof Preferences, unknown>>
+  const patch: Partial<Preferences> = {}
+
+  if (raw.theme === 'system' || raw.theme === 'light' || raw.theme === 'dark') {
+    patch.theme = raw.theme
+  }
+
+  if (
+    raw.manualDirection === 'auto' ||
+    raw.manualDirection === 'zh-en' ||
+    raw.manualDirection === 'en-zh'
+  ) {
+    patch.manualDirection = raw.manualDirection
+  }
+
+  if (Array.isArray(raw.recentModels)) {
+    patch.recentModels = raw.recentModels
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+  }
+
+  if (typeof raw.shortcutDowngradeAcknowledged === 'boolean') {
+    patch.shortcutDowngradeAcknowledged = raw.shortcutDowngradeAcknowledged
+  }
+
+  return patch
 }
 
 function loadRuntimeEnv(): void {

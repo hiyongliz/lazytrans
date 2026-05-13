@@ -32,6 +32,8 @@ describe('preload api', () => {
       listHistory(): Promise<unknown>
       clearHistory(): Promise<void>
       translateHistoryEntry(id: string): Promise<void>
+      getPreferences(): Promise<unknown>
+      patchPreferences(patch: unknown): Promise<unknown>
     }
 
     await api.translateInput('hello')
@@ -53,6 +55,8 @@ describe('preload api', () => {
     await api.listHistory()
     await api.clearHistory()
     await api.translateHistoryEntry('id-1')
+    await api.getPreferences()
+    await api.patchPreferences({ theme: 'dark' })
 
     expect(invokeMock).toHaveBeenCalledWith('translation:manual-translate', 'hello')
     expect(invokeMock).toHaveBeenCalledWith('translation:cancel')
@@ -73,5 +77,7 @@ describe('preload api', () => {
     expect(invokeMock).toHaveBeenCalledWith('history:list')
     expect(invokeMock).toHaveBeenCalledWith('history:clear')
     expect(invokeMock).toHaveBeenCalledWith('history:translate-id', 'id-1')
+    expect(invokeMock).toHaveBeenCalledWith('prefs:get')
+    expect(invokeMock).toHaveBeenCalledWith('prefs:patch', { theme: 'dark' })
   })
 })

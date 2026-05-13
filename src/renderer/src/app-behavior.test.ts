@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  cycleDirection,
+  displayDirection,
   nextHistoryIndex,
   shouldAutoOpenSettings,
   shouldSyncManualInput
@@ -68,5 +70,19 @@ describe('history navigation', () => {
   it('moves toward the most recent entry on down presses', () => {
     expect(nextHistoryIndex(2, 'down', 3)).toBe(1)
     expect(nextHistoryIndex(1, 'down', 3)).toBe(0)
+  })
+})
+
+describe('translate direction', () => {
+  it('cycles auto → zh-en → en-zh → auto', () => {
+    expect(cycleDirection('auto')).toBe('zh-en')
+    expect(cycleDirection('zh-en')).toBe('en-zh')
+    expect(cycleDirection('en-zh')).toBe('auto')
+  })
+
+  it('exposes a short human label for each direction', () => {
+    expect(displayDirection('auto')).toBe('自动')
+    expect(displayDirection('zh-en')).toBe('中→英')
+    expect(displayDirection('en-zh')).toBe('英→中')
   })
 })

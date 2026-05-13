@@ -5,6 +5,7 @@ import {
   DEFAULT_OPENAI_BASE_URL,
   DEFAULT_OPENAI_MODEL,
   TRANSLATE_SYSTEM_PROMPT,
+  buildSystemPrompt,
   buildTranslateUserPrompt,
   buildChatCompletionsUrl,
   readTranslateConfig,
@@ -405,6 +406,94 @@ describe('translator configuration', () => {
         }
       )
     ).resolves.toBe('live-value')
+
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('uses the auto-direction system prompt by default', () => {
+    expect(buildSystemPrompt('auto')).toBe(TRANSLATE_SYSTEM_PROMPT)
+  })
+
+  it('switches to a fixed Chinese-to-English prompt when direction is zh-en', () => {
+    const prompt = buildSystemPrompt('zh-en')
+    expect(prompt).toContain('翻译成英文')
+    expect(prompt).toContain('无论原文是何种语言')
+    expect(prompt).toContain('source_text')
+  })
+
+  it('switches to a fixed English-to-Chinese prompt when direction is en-zh', () => {
+    const prompt = buildSystemPrompt('en-zh')
+    expect(prompt).toContain('翻译成中文')
+    expect(prompt).toContain('无论原文是何种语言')
+    expect(prompt).toContain('source_text')
+  })
+
+  it('passes the chosen system prompt into the streamed request body', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        messages?: Array<{ role: string; content: string }>
+      }
+      const system = body.messages?.find((message) => message.role === 'system')
+      expect(system?.content).toBe(buildSystemPrompt('zh-en'))
+
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Hello' } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await translateTextStream(
+      '你好',
+      { direction: 'zh-en' },
+      {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      }
+    )
+
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('caches translations under different keys per direction', async () => {
+    translateCache.set(
+      {
+        text: 'hi',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        direction: 'auto'
+      },
+      'AUTO'
+    )
+
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ZH-EN' } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateTextStream(
+        'hi',
+        { direction: 'zh-en' },
+        {
+          apiKey: 'test-key',
+          baseUrl: DEFAULT_OPENAI_BASE_URL,
+          model: DEFAULT_OPENAI_MODEL
+        }
+      )
+    ).resolves.toBe('ZH-EN')
 
     expect(fetchMock).toHaveBeenCalled()
   })

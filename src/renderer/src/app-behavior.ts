@@ -1,3 +1,4 @@
+import type { TranslateDirection } from '../../main/preferences'
 import type { TranslationErrorCode } from '../../main/translation-errors'
 import type { TranslationStatus } from '../../main/window'
 
@@ -57,4 +58,16 @@ export function nextHistoryIndex(
     return null
   }
   return currentIndex - 1
+}
+
+export function cycleDirection(current: TranslateDirection): TranslateDirection {
+  if (current === 'auto') return 'zh-en'
+  if (current === 'zh-en') return 'en-zh'
+  return 'auto'
+}
+
+export function displayDirection(current: TranslateDirection): string {
+  if (current === 'zh-en') return '中→英'
+  if (current === 'en-zh') return '英→中'
+  return '自动'
 }

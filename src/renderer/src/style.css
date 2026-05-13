@@ -3,8 +3,52 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --background: 218 100% 98%;
+    --foreground: 210 73% 15%;
+    --border: 217 53% 92%;
+    --input: 217 53% 92%;
+    --ring: 210 100% 56%;
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 212 92% 95%;
+    --secondary-foreground: 210 73% 15%;
+    --destructive: 0 71% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --muted: 212 92% 95%;
+    --muted-foreground: 210 30% 41%;
+    --accent: 212 92% 95%;
+    --accent-foreground: 210 73% 15%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 210 73% 15%;
+    --card: 0 0% 100%;
+    --card-foreground: 210 73% 15%;
+  }
+
+  .dark {
+    --background: 213 50% 10%;
+    --foreground: 218 30% 92%;
+    --border: 213 25% 24%;
+    --input: 213 25% 24%;
+    --ring: 210 100% 60%;
+    --primary: 210 100% 60%;
+    --primary-foreground: 213 50% 10%;
+    --secondary: 213 30% 18%;
+    --secondary-foreground: 218 30% 92%;
+    --destructive: 0 71% 60%;
+    --destructive-foreground: 218 30% 92%;
+    --muted: 213 28% 16%;
+    --muted-foreground: 213 20% 65%;
+    --accent: 213 30% 18%;
+    --accent-foreground: 218 30% 92%;
+    --popover: 213 45% 14%;
+    --popover-foreground: 218 30% 92%;
+    --card: 213 45% 14%;
+    --card-foreground: 218 30% 92%;
+  }
+
   * {
-    border-color: hsl(var(--border, 220 25% 92%));
+    border-color: hsl(var(--border));
   }
 
   html,
@@ -18,7 +62,7 @@
   }
 
   body {
-    color: #0a2540;
+    color: hsl(var(--foreground));
     font-family:
       -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
       'Hiragino Sans', 'Microsoft YaHei', sans-serif;
@@ -27,8 +71,8 @@
   }
 
   ::selection {
-    background: rgba(31, 143, 255, 0.22);
-    color: #0a2540;
+    background: hsl(var(--primary) / 0.22);
+    color: hsl(var(--foreground));
   }
 }
 

@@ -3,11 +3,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowRightLeft,
   Check,
+  ChevronDown,
   Clipboard,
   Copy,
   Eraser,
   ExternalLink,
+  Languages,
   Loader2,
+  MoonStar,
   RefreshCw,
   Settings,
   Square,
@@ -16,9 +19,16 @@ import {
 
 import type { ApiSettings } from '../../main/settings'
 import type { HistoryEntry } from '../../main/history'
+import type {
+  Preferences,
+  ThemePreference,
+  TranslateDirection
+} from '../../main/preferences'
 import type { TranslationState } from '../../main/window'
 import lazyTransLogo from './assets/lazytrans-logo.png'
 import {
+  cycleDirection,
+  displayDirection,
   nextHistoryIndex,
   shouldAutoOpenSettings,
   shouldSyncManualInput
@@ -44,6 +54,13 @@ const emptyApiSettings: ApiSettings = {
   model: ''
 }
 
+const initialPreferences: Preferences = {
+  theme: 'system',
+  manualDirection: 'auto',
+  recentModels: [],
+  shortcutDowngradeAcknowledged: false
+}
+
 type SettingsStatus = 'idle' | 'loading' | 'testing' | 'saved' | 'tested' | 'error'
 type CopyStatus = 'idle' | 'translated' | 'source' | 'error'
 
@@ -67,6 +84,9 @@ export default function App(): ReactElement {
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+  const [preferences, setPreferences] = useState<Preferences>(initialPreferences)
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
+  const [currentModel, setCurrentModel] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const lastSyncedManualText = useRef('')
@@ -98,6 +118,38 @@ export default function App(): ReactElement {
       setHistory(entries)
     })
   }, [])
+
+  useEffect(() => {
+    void window.lazyTrans.getPreferences().then((prefs) => {
+      setPreferences(prefs)
+    })
+    void window.lazyTrans.getApiSettings().then((settings) => {
+      setCurrentModel(settings.model)
+    })
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const root = document.documentElement
+    const applyTheme = (mode: 'dark' | 'light'): void => {
+      root.classList.toggle('dark', mode === 'dark')
+    }
+
+    if (preferences.theme !== 'system') {
+      applyTheme(preferences.theme === 'dark' ? 'dark' : 'light')
+      return
+    }
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    applyTheme(mediaQuery.matches ? 'dark' : 'light')
+    const handleChange = (event: MediaQueryListEvent): void => {
+      applyTheme(event.matches ? 'dark' : 'light')
+    }
+    mediaQuery.addEventListener('change', handleChange)
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange)
+    }
+  }, [preferences.theme])
 
   useEffect(() => {
     if (translation.status !== 'success') return
@@ -262,8 +314,11 @@ export default function App(): ReactElement {
     try {
       const saved = await window.lazyTrans.saveApiSettings(settingsDraft)
       setSettingsDraft(saved)
+      setCurrentModel(saved.model)
       setSettingsStatus('saved')
       setSettingsMessage('已保存')
+      const prefs = await window.lazyTrans.getPreferences()
+      setPreferences(prefs)
     } catch (error) {
       setSettingsStatus('error')
       setSettingsMessage(formatErrorMessage(error))
@@ -302,6 +357,37 @@ export default function App(): ReactElement {
 
   const openAccessibilitySettings = async (): Promise<void> => {
     await window.lazyTrans.openAccessibilitySettings()
+  }
+
+  const toggleDirection = async (): Promise<void> => {
+    const next = cycleDirection(preferences.manualDirection)
+    const updated = await window.lazyTrans.patchPreferences({ manualDirection: next })
+    setPreferences(updated)
+  }
+
+  const toggleTheme = async (): Promise<void> => {
+    const order: ThemePreference[] = ['system', 'light', 'dark']
+    const nextIndex = (order.indexOf(preferences.theme) + 1) % order.length
+    const updated = await window.lazyTrans.patchPreferences({ theme: order[nextIndex] })
+    setPreferences(updated)
+  }
+
+  const pickRecentModel = async (model: string): Promise<void> => {
+    setIsModelPickerOpen(false)
+    if (!model || model === currentModel) return
+    const current = await window.lazyTrans.getApiSettings()
+    if (!current.apiKey) {
+      setIsSettingsOpen(true)
+      return
+    }
+    const saved = await window.lazyTrans.saveApiSettings({
+      ...current,
+      model
+    })
+    setSettingsDraft(saved)
+    setCurrentModel(saved.model)
+    const prefs = await window.lazyTrans.getPreferences()
+    setPreferences(prefs)
   }
 
   const copyText = async (text: string, target: Exclude<CopyStatus, 'idle' | 'error'>): Promise<void> => {
@@ -411,7 +497,7 @@ export default function App(): ReactElement {
     <main className="h-full w-full p-2">
       <Card className="flex h-full w-full flex-col overflow-hidden">
         <header className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
-          <div className="no-drag flex items-center">
+          <div className="no-drag flex items-center gap-0.5">
             <Button
               type="button"
               variant="ghost"
@@ -423,6 +509,29 @@ export default function App(): ReactElement {
             >
               <X className="h-4 w-4" />
             </Button>
+            <Button
+              type="button"
+              variant={preferences.manualDirection === 'auto' ? 'ghost' : 'secondary'}
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => void toggleDirection()}
+              aria-label="切换翻译方向"
+              title={`翻译方向：${displayDirection(preferences.manualDirection)}`}
+            >
+              <Languages className="h-3.5 w-3.5" />
+              <span>{displayDirection(preferences.manualDirection)}</span>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => void toggleTheme()}
+              aria-label="切换主题"
+              title={`主题：${preferences.theme === 'system' ? '跟随系统' : preferences.theme === 'dark' ? '深色' : '浅色'}`}
+            >
+              <MoonStar className="h-3.5 w-3.5" />
+            </Button>
           </div>
 
           <div className="pointer-events-none flex items-center gap-2">
@@ -431,12 +540,67 @@ export default function App(): ReactElement {
               className={cn('inline-block h-1.5 w-1.5 rounded-full', DOT_TONE[translation.status])}
               aria-hidden
             />
-            <span className="max-w-[210px] truncate text-xs text-muted-foreground">
+            <span className="max-w-[110px] truncate text-xs text-muted-foreground">
               {statusLabel}
             </span>
           </div>
 
-          <div className="no-drag flex items-center">
+          <div className="no-drag relative flex items-center gap-0.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 max-w-[130px] gap-1 px-2 text-xs"
+              onClick={() => setIsModelPickerOpen((open) => !open)}
+              aria-label="切换模型"
+              title={currentModel || '未配置模型'}
+            >
+              <span className="truncate">{currentModel || '未配置'}</span>
+              <ChevronDown className="h-3 w-3 shrink-0" />
+            </Button>
+            {isModelPickerOpen && (
+              <div
+                className="absolute right-0 top-9 z-20 min-w-[180px] rounded-md border bg-popover text-popover-foreground shadow-md"
+                onMouseLeave={() => setIsModelPickerOpen(false)}
+              >
+                {preferences.recentModels.length === 0 ? (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent"
+                    onClick={() => {
+                      setIsModelPickerOpen(false)
+                      setIsSettingsOpen(true)
+                    }}
+                  >
+                    暂无最近模型，去设置
+                  </button>
+                ) : (
+                  preferences.recentModels.map((model) => (
+                    <button
+                      key={model}
+                      type="button"
+                      className={cn(
+                        'block w-full truncate px-3 py-1.5 text-left text-xs hover:bg-accent',
+                        model === currentModel && 'font-medium text-primary'
+                      )}
+                      onClick={() => void pickRecentModel(model)}
+                    >
+                      {model}
+                    </button>
+                  ))
+                )}
+                <button
+                  type="button"
+                  className="block w-full border-t px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent"
+                  onClick={() => {
+                    setIsModelPickerOpen(false)
+                    setIsSettingsOpen(true)
+                  }}
+                >
+                  管理…
+                </button>
+              </div>
+            )}
             <Button
               type="button"
               variant={isSettingsOpen ? 'secondary' : 'ghost'}

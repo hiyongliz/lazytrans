@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
 import type { HistoryEntry } from '../main/history'
+import type { Preferences } from '../main/preferences'
 import type { ApiSettings } from '../main/settings'
 import type { TranslationState } from '../main/window'
 
@@ -56,5 +57,11 @@ contextBridge.exposeInMainWorld('lazyTrans', {
   },
   translateHistoryEntry(id: string): Promise<void> {
     return ipcRenderer.invoke('history:translate-id', id)
+  },
+  getPreferences(): Promise<Preferences> {
+    return ipcRenderer.invoke('prefs:get')
+  },
+  patchPreferences(patch: Partial<Preferences>): Promise<Preferences> {
+    return ipcRenderer.invoke('prefs:patch', patch)
   }
 })
