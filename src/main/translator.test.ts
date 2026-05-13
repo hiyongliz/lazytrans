@@ -9,6 +9,7 @@ import {
   buildTranslateUserPrompt,
   buildChatCompletionsUrl,
   readTranslateConfig,
+  testTranslateConnection,
   translateText,
   translateTextStream
 } from './translator'
@@ -496,5 +497,88 @@ describe('translator configuration', () => {
     ).resolves.toBe('ZH-EN')
 
     expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('translateText is a thin wrapper that bypasses the cache via translateTextStream', async () => {
+    translateCache.set(
+      {
+        text: 'cached-only',
+        model: DEFAULT_OPENAI_MODEL,
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        direction: 'auto'
+      },
+      'should-not-be-used'
+    )
+
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'live-text' } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      translateText('cached-only', {
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBe('live-text')
+
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('testTranslateConnection issues a tiny request that still resolves on success', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}'))
+      expect(body.stream).toBe(true)
+
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      testTranslateConnection({
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('testTranslateConnection surfaces auth failures so users see the upstream message', async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({ error: { message: 'Invalid API key' } }),
+        {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      testTranslateConnection({
+        apiKey: 'test-key',
+        baseUrl: DEFAULT_OPENAI_BASE_URL,
+        model: DEFAULT_OPENAI_MODEL
+      })
+    ).rejects.toThrow('Invalid API key')
   })
 })

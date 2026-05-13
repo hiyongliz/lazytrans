@@ -4,6 +4,7 @@ import {
   cycleDirection,
   displayDirection,
   nextHistoryIndex,
+  shouldAutoOpenOnTransition,
   shouldAutoOpenSettings,
   shouldSyncManualInput
 } from './app-behavior'
@@ -84,5 +85,22 @@ describe('translate direction', () => {
     expect(displayDirection('auto')).toBe('自动')
     expect(displayDirection('zh-en')).toBe('中→英')
     expect(displayDirection('en-zh')).toBe('英→中')
+  })
+})
+
+describe('auto-open settings transition', () => {
+  it('triggers when transitioning from no error or other error to missing-api-key', () => {
+    expect(shouldAutoOpenOnTransition(undefined, 'missing-api-key')).toBe(true)
+    expect(shouldAutoOpenOnTransition('network', 'missing-api-key')).toBe(true)
+  })
+
+  it('does not trigger again when the error code stays the same', () => {
+    expect(shouldAutoOpenOnTransition('missing-api-key', 'missing-api-key')).toBe(false)
+    expect(shouldAutoOpenOnTransition('auth-failed', 'auth-failed')).toBe(false)
+  })
+
+  it('never triggers for non-auth errors', () => {
+    expect(shouldAutoOpenOnTransition(undefined, 'network')).toBe(false)
+    expect(shouldAutoOpenOnTransition('missing-api-key', 'network')).toBe(false)
   })
 })

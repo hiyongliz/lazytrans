@@ -30,6 +30,7 @@ import {
   cycleDirection,
   displayDirection,
   nextHistoryIndex,
+  shouldAutoOpenOnTransition,
   shouldAutoOpenSettings,
   shouldSyncManualInput
 } from './app-behavior'
@@ -70,7 +71,7 @@ const DOT_TONE: Record<TranslationState['status'], string> = {
   success: 'bg-primary',
   empty: 'bg-muted-foreground/40',
   error: 'bg-destructive',
-  cancelled: 'bg-muted-foreground/40'
+  cancelled: 'bg-amber-500/60'
 }
 
 export default function App(): ReactElement {
@@ -91,6 +92,7 @@ export default function App(): ReactElement {
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const lastSyncedManualText = useRef('')
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const previousErrorCode = useRef<TranslationState['errorCode']>(undefined)
 
   const shortcutLabel = translation.shortcutLabel ?? 'Option + D'
   const trimmedManual = manualText.trim()
@@ -163,7 +165,10 @@ export default function App(): ReactElement {
   }, [manualText])
 
   useEffect(() => {
-    if (!canOpenSettingsFromError) return
+    const previousCode = previousErrorCode.current
+    previousErrorCode.current = translation.errorCode
+
+    if (!shouldAutoOpenOnTransition(previousCode, translation.errorCode)) return
 
     setIsSettingsOpen(true)
     setSettingsStatus('error')
@@ -171,7 +176,7 @@ export default function App(): ReactElement {
     requestAnimationFrame(() => {
       apiKeyRef.current?.focus()
     })
-  }, [canOpenSettingsFromError])
+  }, [translation.errorCode])
 
   useEffect(() => {
     if (!isSettingsOpen) return
@@ -747,20 +752,20 @@ export default function App(): ReactElement {
             <ScrollArea className="h-full">
               <div className="px-4 py-3.5 pr-12 pb-12 select-text">{renditionContent}</div>
             </ScrollArea>
+            {isLoading && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="absolute left-2 top-2 h-7 w-7 shadow-sm"
+                onClick={() => void cancelTranslation()}
+                aria-label="取消翻译"
+                title="取消"
+              >
+                <Square className="h-3 w-3" />
+              </Button>
+            )}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
-              {isLoading && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 shadow-sm"
-                  onClick={() => void cancelTranslation()}
-                  aria-label="取消翻译"
-                  title="取消"
-                >
-                  <Square className="h-3.5 w-3.5" />
-                </Button>
-              )}
               {canRetry && (
                 <Button
                   type="button"

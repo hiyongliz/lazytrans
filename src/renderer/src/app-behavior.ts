@@ -71,3 +71,10 @@ export function displayDirection(current: TranslateDirection): string {
   if (current === 'en-zh') return '英→中'
   return '自动'
 }
+
+export function shouldAutoOpenOnTransition(
+  previousCode: TranslationErrorCode | undefined,
+  nextCode: TranslationErrorCode | undefined
+): boolean {
+  return shouldAutoOpenSettings(nextCode) && previousCode !== nextCode
+}

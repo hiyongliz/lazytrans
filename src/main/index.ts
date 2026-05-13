@@ -28,7 +28,11 @@ import {
 import { registerTranslateShortcut } from './shortcuts'
 import { toUserFacingTranslationError } from './translation-errors'
 import { runSelectionTranslateFlow } from './translate-flow'
-import { readTranslateConfig, translateText, translateTextStream } from './translator'
+import {
+  readTranslateConfig,
+  testTranslateConnection,
+  translateTextStream
+} from './translator'
 import { createTrayMenu, type TrayHistoryEntry, type TrayMenuHandle } from './tray'
 import {
     createTranslateWindow,
@@ -150,7 +154,7 @@ ipcMain.handle('settings:save-api', (_event, settings: unknown) => {
 
 ipcMain.handle('settings:test-api', async (_event, settings: unknown) => {
   const apiSettings = parseSubmittedApiSettings(settings)
-  await translateText('hello', apiSettings)
+  await testTranslateConnection(apiSettings)
 
   return { ok: true }
 })

@@ -43,6 +43,7 @@ export interface TranslateTextStreamOptions {
   onDelta?: (delta: string) => void
   cache?: TranslateCache | null
   direction?: TranslateDirection
+  timeoutMs?: number
 }
 
 export function readTranslateConfig(env: NodeJS.ProcessEnv = process.env): TranslateConfig {
@@ -73,67 +74,23 @@ export async function translateText(
   text: string,
   config: TranslateConfig = readTranslateConfig()
 ): Promise<string> {
-  if (!config.apiKey.trim()) {
-    throw new Error('OPENAI_API_KEY or TRANSLATE_API_KEY is not configured')
-  }
+  return translateTextStream(text, { cache: null }, config)
+}
 
-  const sourceText = text.trim()
-  if (!sourceText) {
-    return ''
-  }
+const TEST_CONNECTION_TIMEOUT_MS = 5000
+const TEST_CONNECTION_PROBE = '.'
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => {
-    controller.abort()
-  }, API_REQUEST_TIMEOUT_MS)
-
-  let response: Response
-  try {
-    response = await fetch(buildChatCompletionsUrl(config.baseUrl), {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages: [
-          {
-            role: 'system',
-            content: TRANSLATE_SYSTEM_PROMPT
-          },
-          {
-            role: 'user',
-            content: buildTranslateUserPrompt(sourceText)
-          }
-        ],
-        temperature: 0.2
-      })
-    })
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`API request timed out after ${API_REQUEST_TIMEOUT_MS}ms`)
-    }
-
-    throw new Error(`API request failed: ${formatErrorMessage(error)}`)
-  } finally {
-    clearTimeout(timeout)
-  }
-
-  const data = (await parseResponseJson(response)) as ChatCompletionResponse
-  if (!response.ok) {
-    throw new Error(
-      `API request failed: ${data.error?.message ?? response.statusText ?? response.status}`
-    )
-  }
-
-  const translatedText = data.choices?.[0]?.message?.content?.trim()
-  if (!translatedText) {
-    throw new Error('API response did not include translated text')
-  }
-
-  return translatedText
+export async function testTranslateConnection(
+  config: TranslateConfig
+): Promise<void> {
+  await translateTextStream(
+    TEST_CONNECTION_PROBE,
+    {
+      cache: null,
+      timeoutMs: TEST_CONNECTION_TIMEOUT_MS
+    },
+    config
+  )
 }
 
 export async function translateTextStream(
@@ -167,11 +124,12 @@ export async function translateTextStream(
   }
 
   const controller = new AbortController()
+  const requestTimeoutMs = options.timeoutMs ?? API_REQUEST_TIMEOUT_MS
   let timedOut = false
   const timeout = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, API_REQUEST_TIMEOUT_MS)
+  }, requestTimeoutMs)
   const abortFromCaller = (): void => controller.abort()
 
   if (options.signal?.aborted) {
@@ -237,7 +195,7 @@ export async function translateTextStream(
     return translatedText
   } catch (error) {
     if (timedOut) {
-      throw new Error(`API request timed out after ${API_REQUEST_TIMEOUT_MS}ms`)
+      throw new Error(`API request timed out after ${requestTimeoutMs}ms`)
     }
 
     if (controller.signal.aborted) {
