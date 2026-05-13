@@ -327,6 +327,21 @@ async function handleManualTranslate(text: string): Promise<void> {
 
     await phoneticPromise
 
+    if (
+      !phonetic &&
+      !controller.signal.aborted &&
+      isSingleEnglishWord(translatedText)
+    ) {
+      try {
+        const value = await fetchPhonetic(translatedText, {
+          signal: controller.signal
+        })
+        if (value) phonetic = value
+      } catch {
+        // ignore — phonetic is best-effort
+      }
+    }
+
     sendLatestState(currentRequestId, {
       status: 'success',
       sourceText,

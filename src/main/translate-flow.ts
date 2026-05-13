@@ -132,6 +132,15 @@ async function translateSourceText(
 
   await phoneticPromise
 
+  if (!phonetic && !signal?.aborted && isSingleEnglishWord(translatedText)) {
+    try {
+      const value = await fetchPhonetic(translatedText, { signal })
+      if (value) phonetic = value
+    } catch {
+      // best-effort; keep phonetic undefined if fetch failed
+    }
+  }
+
   window.sendState({
     status: 'success',
     sourceText,

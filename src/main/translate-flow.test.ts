@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const getSelectedTextMock = vi.hoisted(() => vi.fn())
 const translateTextStreamMock = vi.hoisted(() => vi.fn())
 const fetchPhoneticMock = vi.hoisted(() => vi.fn())
-const isSingleEnglishWordMock = vi.hoisted(() => vi.fn(() => false))
+const isSingleEnglishWordMock = vi.hoisted(() =>
+  vi.fn<(text: string) => boolean>(() => false)
+)
 const clipboardReadTextMock = vi.hoisted(() => vi.fn())
 
 vi.mock('./selection', () => ({
@@ -293,5 +295,24 @@ describe('selection translate flow', () => {
       (call) => call[0]?.status === 'success'
     )
     expect(finalCall?.[0]?.phonetic).toBeUndefined()
+  })
+
+  it('attaches phonetic from the translated text when source is Chinese but result is a single English word', async () => {
+    const sendStateMock = vi.fn()
+    getSelectedTextMock.mockResolvedValue('你好')
+    translateTextStreamMock.mockResolvedValue('hello')
+    isSingleEnglishWordMock.mockImplementation((text: string) => text === 'hello')
+    fetchPhoneticMock.mockResolvedValue('/həˈloʊ/')
+
+    await runSelectionTranslateFlow({
+      show: vi.fn(),
+      sendState: sendStateMock
+    })
+
+    expect(fetchPhoneticMock).toHaveBeenCalledWith('hello', expect.anything())
+    const finalCall = sendStateMock.mock.calls.find(
+      (call) => call[0]?.status === 'success'
+    )
+    expect(finalCall?.[0]?.phonetic).toBe('/həˈloʊ/')
   })
 })
