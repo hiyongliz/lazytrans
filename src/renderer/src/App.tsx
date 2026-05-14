@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   Clipboard,
+  Clock,
   Copy,
   Eraser,
   ExternalLink,
@@ -13,8 +14,10 @@ import {
   MoonStar,
   Pause,
   RefreshCw,
+  Search,
   Settings,
   Square,
+  Trash2,
   Volume2,
   X
 } from 'lucide-react'
@@ -26,10 +29,14 @@ import type {
   ThemePreference,
   TranslateDirection
 } from '../../main/preferences'
+import { PROVIDER_PRESETS, findProviderByBaseUrl } from '../../main/providers'
 import type { TranslationState } from '../../main/window'
 import {
   cycleDirection,
   displayDirection,
+  errorActionsFor,
+  filterHistory,
+  formatHistoryTimestamp,
   nextHistoryIndex,
   shouldAutoOpenOnTransition,
   shouldAutoOpenSettings,
@@ -64,7 +71,14 @@ const initialPreferences: Preferences = {
   shortcutDowngradeAcknowledged: false
 }
 
-type SettingsStatus = 'idle' | 'loading' | 'testing' | 'saved' | 'tested' | 'error'
+type SettingsStatus =
+  | 'idle'
+  | 'loading'
+  | 'testing'
+  | 'saved'
+  | 'tested'
+  | 'preset-applied'
+  | 'error'
 type CopyStatus = 'idle' | 'translated' | 'source' | 'error'
 
 const DOT_TONE: Record<TranslationState['status'], string> = {
@@ -91,6 +105,9 @@ export default function App(): ReactElement {
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
   const [currentModel, setCurrentModel] = useState('')
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [historyClearArmed, setHistoryClearArmed] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const apiKeyRef = useRef<HTMLInputElement>(null)
   const lastSyncedManualText = useRef('')
@@ -107,8 +124,8 @@ export default function App(): ReactElement {
   const canCopySource = Boolean(translation.sourceText.trim())
   const playableText = (trimmedManual || translation.sourceText.trim())
   const canPlayAudio = playableText.length > 0
-  const canOpenSettingsFromError = shouldAutoOpenSettings(translation.errorCode)
-  const canOpenAccessibilityFromError = translation.errorCode === 'selection-permission'
+  const errorActions =
+    translation.status === 'error' ? errorActionsFor(translation.errorCode) : []
 
   useEffect(() => {
     return window.lazyTrans.onTranslationUpdate(setTranslation)
@@ -261,6 +278,18 @@ export default function App(): ReactElement {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       event.preventDefault()
+      if (historyClearArmed) {
+        setHistoryClearArmed(false)
+        return
+      }
+      if (isHistoryOpen) {
+        setIsHistoryOpen(false)
+        return
+      }
+      if (isSettingsOpen) {
+        setIsSettingsOpen(false)
+        return
+      }
       closeWindow()
     }
 
@@ -268,7 +297,7 @@ export default function App(): ReactElement {
     return () => {
       window.removeEventListener('keydown', handleWindowKeyDown)
     }
-  }, [])
+  }, [historyClearArmed, isHistoryOpen, isSettingsOpen])
 
   const submitManualText = async (): Promise<void> => {
     if (!canSubmit) return
@@ -319,6 +348,28 @@ export default function App(): ReactElement {
     setSettingsMessage('')
   }
 
+  const applyProviderPreset = (presetId: string): void => {
+    const preset = PROVIDER_PRESETS.find((item) => item.id === presetId)
+    if (!preset) return
+    const currentModel = settingsDraft.model.trim()
+    const isUnsetOrPresetDefault =
+      currentModel === '' ||
+      PROVIDER_PRESETS.some((item) => item.defaultModel === currentModel)
+    setSettingsDraft((current) => ({
+      ...current,
+      baseUrl: preset.baseUrl,
+      model: isUnsetOrPresetDefault ? preset.defaultModel : current.model
+    }))
+    setSettingsStatus('preset-applied')
+    setSettingsMessage(
+      isUnsetOrPresetDefault
+        ? preset.hint ?? `已套用 ${preset.name}，请填写 Key 后测试`
+        : `已切换到 ${preset.name}，保留你的模型 "${currentModel}"`
+    )
+  }
+
+  const activeProviderId = findProviderByBaseUrl(settingsDraft.baseUrl)?.id
+
   const saveApiSettings = async (): Promise<void> => {
     setSettingsStatus('loading')
     setSettingsMessage('')
@@ -368,6 +419,33 @@ export default function App(): ReactElement {
 
   const openAccessibilitySettings = async (): Promise<void> => {
     await window.lazyTrans.openAccessibilitySettings()
+  }
+
+  const reuseHistoryEntry = (entry: HistoryEntry): void => {
+    setManualText(entry.sourceText)
+    setHistoryIndex(null)
+    setIsHistoryOpen(false)
+    setTimeout(() => textareaRef.current?.focus(), 0)
+  }
+
+  const copyHistoryEntry = async (entry: HistoryEntry): Promise<void> => {
+    await copyText(entry.translatedText, 'translated')
+  }
+
+  const removeHistoryEntry = async (entry: HistoryEntry): Promise<void> => {
+    const next = await window.lazyTrans.removeHistoryEntry(entry.id)
+    setHistory(next)
+    if (historyIndex !== null) {
+      setHistoryIndex(null)
+    }
+  }
+
+  const clearAllHistory = async (): Promise<void> => {
+    await window.lazyTrans.clearHistory()
+    setHistory([])
+    setHistoryIndex(null)
+    setHistoryQuery('')
+    setHistoryClearArmed(false)
   }
 
   const toggleDirection = async (): Promise<void> => {
@@ -464,9 +542,51 @@ export default function App(): ReactElement {
 
     if (translation.status === 'error') {
       return (
-        <p className="text-sm leading-relaxed text-destructive">
-          {translation.errorMessage || '出错了'}
-        </p>
+        <div className="space-y-2.5">
+          <p className="text-sm leading-relaxed text-destructive">
+            {translation.errorMessage || '出错了'}
+          </p>
+          {errorActions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {errorActions.includes('open-settings') && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setIsSettingsOpen(true)}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  打开设置
+                </Button>
+              )}
+              {errorActions.includes('retry') && canRetry && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => void retryTranslation()}
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  重试
+                </Button>
+              )}
+              {errorActions.includes('open-accessibility') && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => void openAccessibilitySettings()}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  辅助功能
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
       )
     }
 
@@ -522,6 +642,8 @@ export default function App(): ReactElement {
       </div>
     )
   }, [
+    canRetry,
+    errorActions,
     isLoading,
     shortcutLabel,
     translation.errorMessage,
@@ -534,7 +656,7 @@ export default function App(): ReactElement {
 
   return (
     <main className="h-full w-full p-2">
-      <Card className="flex h-full w-full flex-col overflow-hidden">
+      <Card className="relative flex h-full w-full flex-col overflow-hidden">
         <header className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
           <div className="no-drag flex items-center gap-0.5">
             <Button
@@ -570,6 +692,20 @@ export default function App(): ReactElement {
               title={`主题：${preferences.theme === 'system' ? '跟随系统' : preferences.theme === 'dark' ? '深色' : '浅色'}`}
             >
               <MoonStar className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant={isHistoryOpen ? 'secondary' : 'ghost'}
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => {
+                setIsHistoryOpen((open) => !open)
+                if (isSettingsOpen) setIsSettingsOpen(false)
+              }}
+              aria-label="历史记录"
+              title="历史记录"
+            >
+              <Clock className="h-3.5 w-3.5" />
             </Button>
           </div>
 
@@ -662,6 +798,30 @@ export default function App(): ReactElement {
                 void saveApiSettings()
               }}
             >
+              <div className="flex flex-wrap items-center gap-1">
+                <span className="mr-1 text-xs uppercase tracking-wide text-muted-foreground">
+                  预设
+                </span>
+                {PROVIDER_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.id}
+                    type="button"
+                    variant={activeProviderId === preset.id ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="h-6 gap-1 px-2 text-xs"
+                    onClick={() => applyProviderPreset(preset.id)}
+                    title={preset.hint ?? preset.baseUrl}
+                  >
+                    {preset.name}
+                    {preset.hint && (
+                      <span className="rounded bg-muted px-1 py-0 text-[10px] text-muted-foreground">
+                        本地
+                      </span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+
               <SettingsField label="Key">
                 <Input
                   ref={apiKeyRef}
@@ -697,7 +857,9 @@ export default function App(): ReactElement {
                     'text-xs',
                     settingsStatus === 'error'
                       ? 'text-destructive'
-                      : settingsStatus === 'saved' || settingsStatus === 'tested'
+                      : settingsStatus === 'saved' ||
+                          settingsStatus === 'tested' ||
+                          settingsStatus === 'preset-applied'
                         ? 'text-primary'
                         : 'text-muted-foreground'
                   )}
@@ -734,6 +896,31 @@ export default function App(): ReactElement {
                 </div>
               </div>
             </form>
+          </div>
+        )}
+
+        {isHistoryOpen && (
+          <div
+            className="absolute inset-x-0 bottom-0 top-11 z-30 flex flex-col bg-background/95 backdrop-blur-sm"
+            role="dialog"
+            aria-label="历史记录"
+          >
+            <HistoryPanel
+              entries={history}
+              query={historyQuery}
+              onQueryChange={setHistoryQuery}
+              onReuse={reuseHistoryEntry}
+              onCopy={copyHistoryEntry}
+              onRemove={removeHistoryEntry}
+              onClear={clearAllHistory}
+              clearArmed={historyClearArmed}
+              onArmClear={() => setHistoryClearArmed(true)}
+              onCancelClear={() => setHistoryClearArmed(false)}
+              onClose={() => {
+                setIsHistoryOpen(false)
+                setHistoryClearArmed(false)
+              }}
+            />
           </div>
         )}
 
@@ -869,32 +1056,6 @@ export default function App(): ReactElement {
                   )}
                 </Button>
               )}
-              {canOpenSettingsFromError && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 shadow-sm"
-                  onClick={() => setIsSettingsOpen(true)}
-                  aria-label="打开设置"
-                  title="设置"
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
-              )}
-              {canOpenAccessibilityFromError && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 shadow-sm"
-                  onClick={() => void openAccessibilitySettings()}
-                  aria-label="打开辅助功能设置"
-                  title="打开辅助功能设置"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
-              )}
             </div>
           </Card>
         </div>
@@ -938,4 +1099,186 @@ function getStatusLabel(translation: TranslationState, shortcutLabel: string): s
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
+}
+
+interface HistoryPanelProps {
+  entries: readonly HistoryEntry[]
+  query: string
+  onQueryChange: (next: string) => void
+  onReuse: (entry: HistoryEntry) => void
+  onCopy: (entry: HistoryEntry) => void | Promise<void>
+  onRemove: (entry: HistoryEntry) => void | Promise<void>
+  onClear: () => void | Promise<void>
+  clearArmed: boolean
+  onArmClear: () => void
+  onCancelClear: () => void
+  onClose: () => void
+}
+
+function HistoryPanel({
+  entries,
+  query,
+  onQueryChange,
+  onReuse,
+  onCopy,
+  onRemove,
+  onClear,
+  clearArmed,
+  onArmClear,
+  onCancelClear,
+  onClose
+}: HistoryPanelProps): ReactElement {
+  const filtered = useMemo(() => filterHistory(entries, query), [entries, query])
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (copyResetRef.current) clearTimeout(copyResetRef.current)
+    }
+  }, [])
+
+  const handleCopy = (entry: HistoryEntry): void => {
+    void Promise.resolve(onCopy(entry)).then(() => {
+      setCopiedId(entry.id)
+      if (copyResetRef.current) clearTimeout(copyResetRef.current)
+      copyResetRef.current = setTimeout(() => setCopiedId(null), 1200)
+    })
+  }
+
+  return (
+    <div className="no-drag flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        <Input
+          type="search"
+          value={query}
+          placeholder={`搜索 ${entries.length} 条历史…`}
+          className="h-7 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
+        {clearArmed ? (
+          <>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-7 gap-1 px-2 text-xs"
+              onClick={() => void onClear()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              确认清空
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={onCancelClear}
+            >
+              取消
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            onClick={onArmClear}
+            disabled={entries.length === 0}
+            title="清空全部历史"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            清空
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onClose}
+          aria-label="关闭历史面板"
+          title="收起"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <ScrollArea className="min-h-0 flex-1">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+            {entries.length === 0 ? '还没有历史记录' : '没有匹配的记录'}
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {filtered.map((entry) => (
+              <li
+                key={entry.id}
+                className="group cursor-pointer px-3 py-2 hover:bg-accent/60 focus-within:bg-accent/60"
+                role="button"
+                tabIndex={0}
+                onClick={() => onReuse(entry)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onReuse(entry)
+                  }
+                }}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-foreground">{entry.sourceText}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {entry.translatedText}
+                    </p>
+                    <p className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                      <span className="mr-1 rounded bg-muted px-1 py-px text-muted-foreground">
+                        {displayDirection(entry.direction)}
+                      </span>
+                      {formatHistoryTimestamp(entry.createdAt)} · {entry.model}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground/60 transition-opacity group-hover:text-foreground">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        handleCopy(entry)
+                      }}
+                      aria-label={copiedId === entry.id ? '已复制译文' : '复制译文'}
+                      title={copiedId === entry.id ? '已复制' : '复制译文'}
+                    >
+                      {copiedId === entry.id ? (
+                        <Check className="h-3 w-3 text-primary" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void onRemove(entry)
+                      }}
+                      aria-label="删除该条"
+                      title="删除"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </ScrollArea>
+    </div>
+  )
 }

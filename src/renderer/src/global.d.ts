@@ -20,6 +20,7 @@ declare global {
       openAccessibilitySettings: () => Promise<void>
       listHistory: () => Promise<HistoryEntry[]>
       clearHistory: () => Promise<void>
+      removeHistoryEntry: (id: string) => Promise<HistoryEntry[]>
       translateHistoryEntry: (id: string) => Promise<void>
       getPreferences: () => Promise<Preferences>
       patchPreferences: (patch: Partial<Preferences>) => Promise<Preferences>

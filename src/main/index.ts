@@ -7,6 +7,7 @@ import {
   appendHistory,
   createHistoryEntry,
   readHistory,
+  removeHistoryEntry,
   writeHistory,
   type HistoryEntry
 } from './history'
@@ -16,7 +17,8 @@ import {
   promoteRecentModel,
   readPreferences,
   writePreferences,
-  type Preferences
+  type Preferences,
+  type TranslateDirection
 } from './preferences'
 import {
   applyApiSettingsToEnv,
@@ -177,6 +179,24 @@ ipcMain.handle('history:clear', () => {
   trayHandle?.refresh()
 })
 
+ipcMain.handle('history:remove', (_event, id: unknown) => {
+  if (typeof id !== 'string') {
+    return historyEntries.map(toPublicHistoryEntry)
+  }
+  const next = removeHistoryEntry(historyEntries, id)
+  if (next.length === historyEntries.length) {
+    return historyEntries.map(toPublicHistoryEntry)
+  }
+  historyEntries = next
+  try {
+    writeHistory(getHistoryPath(), historyEntries)
+  } catch (error) {
+    console.error(`Failed to persist history: ${formatErrorMessage(error)}`)
+  }
+  trayHandle?.refresh()
+  return historyEntries.map(toPublicHistoryEntry)
+})
+
 ipcMain.handle('history:translate-id', async (_event, id: unknown) => {
   if (typeof id !== 'string') {
     return
@@ -237,7 +257,11 @@ async function handleTranslateShortcut(): Promise<void> {
         },
         sendState: (state) => {
           if (state.status === 'success' && state.translatedText) {
-            recordSuccessfulTranslation(state.sourceText, state.translatedText)
+            recordSuccessfulTranslation(
+              state.sourceText,
+              state.translatedText,
+              preferences.manualDirection
+            )
           }
           sendLatestState(currentRequestId, state)
         }
@@ -349,7 +373,7 @@ async function handleManualTranslate(text: string): Promise<void> {
       errorMessage: '',
       ...(phonetic !== undefined ? { phonetic } : {})
     })
-    recordSuccessfulTranslation(sourceText, translatedText)
+    recordSuccessfulTranslation(sourceText, translatedText, preferences.manualDirection)
   } catch (error) {
     if (isAbortError(error)) {
       return
@@ -447,13 +471,18 @@ function scheduleBoundsWrite(bounds: Electron.Rectangle): void {
   }, BOUNDS_WRITE_DEBOUNCE_MS)
 }
 
-function recordSuccessfulTranslation(sourceText: string, translatedText: string): void {
+function recordSuccessfulTranslation(
+  sourceText: string,
+  translatedText: string,
+  direction: TranslateDirection
+): void {
   const config = readTranslateConfig()
   const entry = createHistoryEntry({
     sourceText,
     translatedText,
     model: config.model,
-    baseUrl: config.baseUrl
+    baseUrl: config.baseUrl,
+    direction
   })
   historyEntries = appendHistory(historyEntries, entry)
   try {

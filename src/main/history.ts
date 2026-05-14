@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 
+import type { TranslateDirection } from './preferences'
+
 export interface HistoryEntry {
   id: string
   sourceText: string
   translatedText: string
   model: string
   baseUrl: string
+  direction: TranslateDirection
   createdAt: number
 }
 
@@ -41,7 +44,8 @@ export function appendHistory(
       !(
         existing.sourceText === entry.sourceText &&
         existing.model === entry.model &&
-        existing.baseUrl === entry.baseUrl
+        existing.baseUrl === entry.baseUrl &&
+        existing.direction === entry.direction
       )
   )
 
@@ -57,11 +61,19 @@ export function clearHistory(): HistoryEntry[] {
   return []
 }
 
+export function removeHistoryEntry(
+  current: HistoryEntry[],
+  id: string
+): HistoryEntry[] {
+  return current.filter((entry) => entry.id !== id)
+}
+
 export function createHistoryEntry(input: {
   sourceText: string
   translatedText: string
   model: string
   baseUrl: string
+  direction?: TranslateDirection
   now?: number
 }): HistoryEntry {
   const createdAt = input.now ?? Date.now()
@@ -71,6 +83,7 @@ export function createHistoryEntry(input: {
     translatedText: input.translatedText,
     model: input.model,
     baseUrl: input.baseUrl,
+    direction: input.direction ?? 'auto',
     createdAt
   }
 }
@@ -114,6 +127,14 @@ function normalizeEntry(value: unknown): HistoryEntry | null {
     translatedText: raw.translatedText,
     model: raw.model,
     baseUrl: raw.baseUrl,
+    direction: normalizeDirection(raw.direction),
     createdAt: raw.createdAt
   }
+}
+
+function normalizeDirection(value: unknown): TranslateDirection {
+  if (value === 'zh-en' || value === 'en-zh' || value === 'auto') {
+    return value
+  }
+  return 'auto'
 }

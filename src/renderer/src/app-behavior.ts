@@ -1,4 +1,5 @@
 import type { TranslateDirection } from '../../main/preferences'
+import type { HistoryEntry } from '../../main/history'
 import type { TranslationErrorCode } from '../../main/translation-errors'
 import type { TranslationStatus } from '../../main/window'
 
@@ -31,6 +32,29 @@ export function shouldSyncManualInput({
 
 export function shouldAutoOpenSettings(errorCode: TranslationErrorCode | undefined): boolean {
   return errorCode === 'missing-api-key' || errorCode === 'auth-failed'
+}
+
+export type ErrorAction = 'open-settings' | 'retry' | 'open-accessibility'
+
+export function errorActionsFor(
+  errorCode: TranslationErrorCode | undefined
+): ErrorAction[] {
+  switch (errorCode) {
+    case 'missing-api-key':
+    case 'auth-failed':
+      return ['open-settings']
+    case 'rate-limited':
+    case 'network':
+      return ['retry', 'open-settings']
+    case 'api-timeout':
+      return ['retry']
+    case 'selection-permission':
+      return ['open-accessibility', 'retry']
+    case 'api-error':
+      return ['retry']
+    default:
+      return []
+  }
 }
 
 export type HistoryNavDirection = 'up' | 'down'
@@ -77,4 +101,40 @@ export function shouldAutoOpenOnTransition(
   nextCode: TranslationErrorCode | undefined
 ): boolean {
   return shouldAutoOpenSettings(nextCode) && previousCode !== nextCode
+}
+
+export function filterHistory(
+  entries: readonly HistoryEntry[],
+  query: string
+): HistoryEntry[] {
+  const trimmed = query.trim().toLowerCase()
+  if (!trimmed) {
+    return [...entries]
+  }
+  return entries.filter((entry) => {
+    return (
+      entry.sourceText.toLowerCase().includes(trimmed) ||
+      entry.translatedText.toLowerCase().includes(trimmed) ||
+      entry.model.toLowerCase().includes(trimmed)
+    )
+  })
+}
+
+export function formatHistoryTimestamp(timestamp: number, now: number = Date.now()): string {
+  const delta = Math.max(0, now - timestamp)
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  if (delta < minute) return '刚刚'
+  if (delta < hour) return `${Math.floor(delta / minute)} 分钟前`
+  if (delta < day) return `${Math.floor(delta / hour)} 小时前`
+  if (delta < 7 * day) return `${Math.floor(delta / day)} 天前`
+
+  const date = new Date(timestamp)
+  const year = date.getFullYear()
+  const nowYear = new Date(now).getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day2 = `${date.getDate()}`.padStart(2, '0')
+  return year === nowYear ? `${month}-${day2}` : `${year}-${month}-${day2}`
 }

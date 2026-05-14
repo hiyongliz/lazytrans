@@ -8,6 +8,7 @@ import {
   appendHistory,
   createHistoryEntry,
   readHistory,
+  removeHistoryEntry,
   writeHistory,
   type HistoryEntry
 } from './history'
@@ -153,5 +154,91 @@ describe('translation history', () => {
 
     const entries = readHistory(path)
     expect(entries.map((entry) => entry.id)).toEqual(['good'])
+  })
+
+  it('removes a single entry by id, leaving others intact', () => {
+    const a = createHistoryEntry({
+      sourceText: 'a',
+      translatedText: '甲',
+      model: 'm',
+      baseUrl: 'u',
+      now: 1
+    })
+    const b = createHistoryEntry({
+      sourceText: 'b',
+      translatedText: '乙',
+      model: 'm',
+      baseUrl: 'u',
+      now: 2
+    })
+
+    expect(removeHistoryEntry([a, b], a.id)).toEqual([b])
+    expect(removeHistoryEntry([a, b], 'missing')).toEqual([a, b])
+  })
+
+  it('keeps both direction variants for the same source text', () => {
+    const zhEn = createHistoryEntry({
+      sourceText: 'hello',
+      translatedText: '你好',
+      model: 'm',
+      baseUrl: 'u',
+      direction: 'zh-en',
+      now: 1
+    })
+    const enZh = createHistoryEntry({
+      sourceText: 'hello',
+      translatedText: 'Hallo',
+      model: 'm',
+      baseUrl: 'u',
+      direction: 'en-zh',
+      now: 2
+    })
+
+    const entries = appendHistory([zhEn], enZh)
+    expect(entries).toHaveLength(2)
+    expect(entries.map((entry) => entry.direction)).toEqual(['en-zh', 'zh-en'])
+  })
+
+  it('replaces only the matching direction when the same source is appended again', () => {
+    const first = createHistoryEntry({
+      sourceText: 'hello',
+      translatedText: '你好 v1',
+      model: 'm',
+      baseUrl: 'u',
+      direction: 'en-zh',
+      now: 1
+    })
+    const second = createHistoryEntry({
+      sourceText: 'hello',
+      translatedText: '你好 v2',
+      model: 'm',
+      baseUrl: 'u',
+      direction: 'en-zh',
+      now: 2
+    })
+
+    const entries = appendHistory([first], second)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.translatedText).toBe('你好 v2')
+  })
+
+  it('defaults legacy entries without direction to auto', () => {
+    const path = join(tempDir, 'history.json')
+    writeFileSync(
+      path,
+      JSON.stringify([
+        {
+          id: 'legacy',
+          sourceText: 'hi',
+          translatedText: '嗨',
+          model: 'm',
+          baseUrl: 'u',
+          createdAt: 1
+        }
+      ])
+    )
+
+    const entries = readHistory(path)
+    expect(entries.map((entry) => entry.direction)).toEqual(['auto'])
   })
 })

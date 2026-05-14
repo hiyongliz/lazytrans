@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld('lazyTrans', {
   clearHistory(): Promise<void> {
     return ipcRenderer.invoke('history:clear')
   },
+  removeHistoryEntry(id: string): Promise<HistoryEntry[]> {
+    return ipcRenderer.invoke('history:remove', id)
+  },
   translateHistoryEntry(id: string): Promise<void> {
     return ipcRenderer.invoke('history:translate-id', id)
   },
