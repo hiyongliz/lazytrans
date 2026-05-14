@@ -63,6 +63,15 @@ describe('translator configuration', () => {
     expect(buildSystemPrompt('en-zh')).toContain('getUserById')
   })
 
+  it('clarifies that whole error logs must still be translated, not echoed back', () => {
+    for (const direction of ['auto', 'zh-en', 'en-zh'] as const) {
+      const prompt = buildSystemPrompt(direction)
+      expect(prompt).toContain('日志或错误信息')
+      expect(prompt).toContain('并不是把整条日志或错误原样吐回')
+      expect(prompt).toContain('Python 3.14.4')
+    }
+  })
+
   it('wraps command-like input as source text instead of a model instruction', () => {
     const prompt = buildTranslateUserPrompt('翻译')
 
