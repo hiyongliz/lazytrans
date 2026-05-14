@@ -104,7 +104,7 @@ export default function App(): ReactElement {
   const [preferences, setPreferences] = useState<Preferences>(initialPreferences)
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
   const [currentModel, setCurrentModel] = useState('')
-  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState<'source' | 'translated' | null>(null)
   const [isHistoryOpen, setIsHistoryOpen] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
   const [historyClearArmed, setHistoryClearArmed] = useState(false)
@@ -122,8 +122,11 @@ export default function App(): ReactElement {
   const settingsBusy = settingsStatus === 'loading' || settingsStatus === 'testing'
   const canRetry = !isLoading && Boolean(trimmedManual || translation.sourceText.trim())
   const canCopySource = Boolean(translation.sourceText.trim())
-  const playableText = (trimmedManual || translation.sourceText.trim())
-  const canPlayAudio = playableText.length > 0
+  const sourcePlayableText = (trimmedManual || translation.sourceText.trim())
+  const canPlaySource = sourcePlayableText.length > 0
+  const translatedPlayableText = translation.translatedText.trim()
+  const canPlayTranslated =
+    translation.status === 'success' && translatedPlayableText.length > 0
   const errorActions =
     translation.status === 'error' ? errorActionsFor(translation.errorCode) : []
 
@@ -411,9 +414,15 @@ export default function App(): ReactElement {
   }
 
   const clearManualText = (): void => {
+    // Keep the synced ref at the latest incoming text so that the input-sync
+    // effect treats the empty value as a local edit and does NOT refill the box.
+    lastSyncedManualText.current =
+      translation.sourceText || translation.manualInputText || ''
     setManualText('')
-    lastSyncedManualText.current = ''
     setHistoryIndex(null)
+    if (translation.status === 'loading') {
+      void window.lazyTrans.cancelTranslation()
+    }
     textareaRef.current?.focus()
   }
 
@@ -479,20 +488,24 @@ export default function App(): ReactElement {
     setPreferences(prefs)
   }
 
-  const togglePlayback = (): void => {
-    if (isSpeaking) {
+  const togglePlayback = (target: 'source' | 'translated'): void => {
+    if (isSpeaking === target) {
       cancelSpeech()
-      setIsSpeaking(false)
+      setIsSpeaking(null)
       return
     }
-    if (!playableText) return
-    const started = speak(playableText, {
-      onStart: () => setIsSpeaking(true),
-      onEnd: () => setIsSpeaking(false),
-      onError: () => setIsSpeaking(false)
+    if (isSpeaking) {
+      cancelSpeech()
+    }
+    const text = target === 'source' ? sourcePlayableText : translatedPlayableText
+    if (!text) return
+    const started = speak(text, {
+      onStart: () => setIsSpeaking(target),
+      onEnd: () => setIsSpeaking((current) => (current === target ? null : current)),
+      onError: () => setIsSpeaking((current) => (current === target ? null : current))
     })
     if (!started) {
-      setIsSpeaking(false)
+      setIsSpeaking(null)
     }
   }
 
@@ -931,41 +944,78 @@ export default function App(): ReactElement {
               data-manual-input="true"
               value={manualText}
               placeholder="键入或选中…"
-              className="min-h-[72px] resize-none pr-24"
+              className="min-h-[88px] resize-none pr-40"
               onChange={(event) => {
                 setManualText(event.target.value)
                 if (historyIndex !== null) setHistoryIndex(null)
               }}
               onKeyDown={handleKeyDown}
             />
-            {manualText && (
+            <div className="absolute bottom-2 right-2 flex items-center gap-1">
+              {canPlaySource && (
+                <Button
+                  type="button"
+                  variant={isSpeaking === 'source' ? 'default' : 'secondary'}
+                  size="icon"
+                  className="h-8 w-8 shadow-sm"
+                  onClick={() => togglePlayback('source')}
+                  aria-label={isSpeaking === 'source' ? '停止播放原文' : '播放原文'}
+                  title={isSpeaking === 'source' ? '停止' : '播放原文'}
+                >
+                  {isSpeaking === 'source' ? (
+                    <Pause className="h-4 w-4" />
+                  ) : (
+                    <Volume2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              {canCopySource && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-8 w-8 shadow-sm"
+                  onClick={() => void copySourceText()}
+                  aria-label={copyStatus === 'source' ? '已复制原文' : '复制原文'}
+                  title={copyStatus === 'source' ? '已复制原文' : '复制原文'}
+                >
+                  {copyStatus === 'source' ? (
+                    <Check className="h-4 w-4 text-primary" />
+                  ) : (
+                    <Clipboard className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              {manualText && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-8 w-8 shadow-sm"
+                  onClick={clearManualText}
+                  aria-label="清空输入"
+                  title="清空"
+                >
+                  <Eraser className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="icon"
-                className="absolute bottom-2 right-11 h-8 w-8"
-                onClick={clearManualText}
-                aria-label="清空输入"
-                title="清空"
+                className="h-8 w-8 shadow-sm"
+                onClick={() => void submitManualText()}
+                disabled={!canSubmit}
+                aria-label="翻译"
+                title="翻译"
               >
-                <Eraser className="h-4 w-4" />
+                {isLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowRightLeft className="h-4 w-4" />
+                )}
               </Button>
-            )}
-            <Button
-              type="button"
-              size="icon"
-              className="absolute bottom-2 right-2 h-8 w-8"
-              onClick={() => void submitManualText()}
-              disabled={!canSubmit}
-              aria-label="翻译"
-              title="翻译"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRightLeft className="h-4 w-4" />
-              )}
-            </Button>
+            </div>
           </div>
 
           <Card className="relative flex-1 min-h-0 overflow-hidden bg-muted/40 shadow-none">
@@ -986,23 +1036,6 @@ export default function App(): ReactElement {
               </Button>
             )}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
-              {canPlayAudio && (
-                <Button
-                  type="button"
-                  variant={isSpeaking ? 'default' : 'secondary'}
-                  size="icon"
-                  className="h-8 w-8 shadow-sm"
-                  onClick={togglePlayback}
-                  aria-label={isSpeaking ? '停止播放' : '播放原文'}
-                  title={isSpeaking ? '停止' : '播放'}
-                >
-                  {isSpeaking ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
               {canRetry && (
                 <Button
                   type="button"
@@ -1016,20 +1049,20 @@ export default function App(): ReactElement {
                   <RefreshCw className="h-4 w-4" />
                 </Button>
               )}
-              {canCopySource && (
+              {canPlayTranslated && (
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant={isSpeaking === 'translated' ? 'default' : 'secondary'}
                   size="icon"
                   className="h-8 w-8 shadow-sm"
-                  onClick={() => void copySourceText()}
-                  aria-label={copyStatus === 'source' ? '已复制原文' : '复制原文'}
-                  title={copyStatus === 'source' ? '已复制原文' : '复制原文'}
+                  onClick={() => togglePlayback('translated')}
+                  aria-label={isSpeaking === 'translated' ? '停止播放译文' : '播放译文'}
+                  title={isSpeaking === 'translated' ? '停止' : '播放译文'}
                 >
-                  {copyStatus === 'source' ? (
-                    <Check className="h-4 w-4 text-primary" />
+                  {isSpeaking === 'translated' ? (
+                    <Pause className="h-4 w-4" />
                   ) : (
-                    <Clipboard className="h-4 w-4" />
+                    <Volume2 className="h-4 w-4" />
                   )}
                 </Button>
               )}
