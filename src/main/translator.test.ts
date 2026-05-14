@@ -52,6 +52,17 @@ describe('translator configuration', () => {
     expect(TRANSLATE_SYSTEM_PROMPT).toContain('技术术语')
   })
 
+  it('teaches the model to translate standalone code identifiers as phrases', () => {
+    for (const direction of ['auto', 'zh-en', 'en-zh'] as const) {
+      const prompt = buildSystemPrompt(direction)
+      expect(prompt).toContain('标识符规则')
+      expect(prompt).toContain('camelCase')
+      expect(prompt).toContain('snake_case')
+    }
+    expect(buildSystemPrompt('auto')).toContain('getUserById')
+    expect(buildSystemPrompt('en-zh')).toContain('getUserById')
+  })
+
   it('wraps command-like input as source text instead of a model instruction', () => {
     const prompt = buildTranslateUserPrompt('翻译')
 
