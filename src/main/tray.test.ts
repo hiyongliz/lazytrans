@@ -90,17 +90,19 @@ describe('tray menu construction', () => {
     }
     const TrayCtor = vi.fn(() => trayInstance) as unknown as typeof import('electron').Tray
     const MenuCtor = { buildFromTemplate: vi.fn((template) => template) }
-    const createImage = vi.fn(() => ({}) as Electron.NativeImage)
+    const imageInstance = { setTemplateImage: vi.fn() } as unknown as Electron.NativeImage
+    const createImage = vi.fn(() => imageInstance)
 
     const callbacks = makeCallbacks()
-    const handle = createTrayMenu('/path/to/icon.icns', callbacks, {
+    const handle = createTrayMenu('/path/to/icon.png', callbacks, {
       TrayCtor,
       MenuCtor,
       createImage
     })
 
-    expect(createImage).toHaveBeenCalledWith('/path/to/icon.icns')
-    expect(TrayCtor).toHaveBeenCalled()
+    expect(createImage).toHaveBeenCalledWith('/path/to/icon.png')
+    expect(imageInstance.setTemplateImage).toHaveBeenCalledWith(true)
+    expect(TrayCtor).toHaveBeenCalledWith(imageInstance)
     expect(trayInstance.setToolTip).toHaveBeenCalledWith('LazyTrans')
     expect(MenuCtor.buildFromTemplate).toHaveBeenCalled()
     expect(trayInstance.setContextMenu).toHaveBeenCalled()

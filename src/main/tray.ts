@@ -41,6 +41,7 @@ export function createTrayMenu(
     deps.createImage ?? ((path: string) => nativeImage.createFromPath(path))
 
   const image = createImage(iconPath)
+  image.setTemplateImage(true)
   const tray = new TrayCtor(image)
   tray.setToolTip('LazyTrans')
 
