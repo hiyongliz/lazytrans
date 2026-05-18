@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { app, dialog, globalShortcut, ipcMain, shell } from 'electron'
 
@@ -30,6 +29,7 @@ import {
 import { registerTranslateShortcut } from './shortcuts'
 import { toUserFacingTranslationError } from './translation-errors'
 import { runSelectionTranslateFlow } from './translate-flow'
+import { resolveTrayIconPath } from './tray-icon-path'
 import {
   fetchPhonetic,
   isSingleEnglishWord,
@@ -542,15 +542,14 @@ function setupTray(): void {
 }
 
 function getTrayIconPath(): string {
-  const devIcon = join(app.getAppPath(), 'build/icon.icns')
-  if (existsSync(devIcon)) {
-    return devIcon
+  const resolved = resolveTrayIconPath([
+    join(app.getAppPath(), 'build/trayIconTemplate.png'),
+    join(process.resourcesPath, 'trayIconTemplate.png')
+  ])
+  if (!resolved) {
+    console.warn('Tray icon asset missing; menubar will fall back to empty image.')
   }
-  const resourcesIcon = join(process.resourcesPath, 'icon.icns')
-  if (existsSync(resourcesIcon)) {
-    return resourcesIcon
-  }
-  return ''
+  return resolved
 }
 
 function getHistoryPath(): string {
