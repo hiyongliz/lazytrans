@@ -22,6 +22,15 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build/",
+        "to": ".",
+        "filter": [
+          "trayIconTemplate*.png"
+        ]
+      }
+    ],
     "directories": {
       "output": "release"
     },
