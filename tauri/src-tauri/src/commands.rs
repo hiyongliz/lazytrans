@@ -66,14 +66,15 @@ pub async fn translate_input(
         return Ok(());
     }
 
-    // 取消上一个翻译请求
+    // 取消上一个翻译请求, 用 request_id 标识当前请求归属
+    let my_id = state.next_request_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let cancel = CancellationToken::new();
     {
-        let mut guard = state.active_cancel.lock().await;
-        if let Some(prev) = guard.take() {
+        let mut guard = state.active_request.lock().await;
+        if let Some((_, prev)) = guard.take() {
             prev.cancel();
         }
-        *guard = Some(cancel.clone());
+        *guard = Some((my_id, cancel.clone()));
     }
 
     let direction = TranslateDirection::Auto;
@@ -149,11 +150,11 @@ pub async fn translate_input(
         }
     }
 
-    // 清理 active_cancel（若仍是自己）
-    let mut guard = state.active_cancel.lock().await;
+    // 清理 active_request（若仍是自己）
+    let mut guard = state.active_request.lock().await;
     let still_ours = guard
         .as_ref()
-        .map(|c| std::ptr::eq(c, &cancel) || c.is_cancelled())
+        .map(|(id, _)| *id == my_id)
         .unwrap_or(false);
     if still_ours {
         *guard = None;
@@ -166,12 +167,14 @@ pub async fn cancel_translation(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<()> {
+    let mut guard = state.active_request.lock().await;
+    let Some((_, token)) = guard.take() else {
+        return Ok(()); // 当前无进行中的翻译, 不再 emit 一个虚假的 cancelled 状态
+    };
+    drop(guard);
+    token.cancel();
     let manual = state.manual_input_text.read().unwrap().trim().to_string();
     let label = state.shortcut_label.read().unwrap().clone();
-    let mut guard = state.active_cancel.lock().await;
-    if let Some(c) = guard.take() {
-        c.cancel();
-    }
     emit_state(&app, TranslationState {
         status: "cancelled".into(),
         phase: None,
