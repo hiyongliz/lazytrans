@@ -64,7 +64,6 @@ pub fn run() {
         .plugin(sc_plugin)
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::translate_input,
             commands::cancel_translation,
@@ -73,7 +72,34 @@ pub fn run() {
             commands::open_accessibility_settings,
         ])
         .setup(|app| {
-            let _ = ensure_translate_window(app.handle());
+            crate::env::load_dotenv_files(app.handle());
+            let state = AppState::init(app.handle());
+            app.manage(state);
+
+            let win = ensure_translate_window(app.handle())?;
+
+            // 订阅窗口 Move/Resize, 防抖写入 window-state.json
+            let app_handle = app.handle().clone();
+            win.on_window_event(move |event| {
+                use tauri::WindowEvent;
+                if matches!(event, WindowEvent::Resized(_) | WindowEvent::Moved(_)) {
+                    let Some(state) = app_handle.try_state::<AppState>() else { return };
+                    let Some(w) = app_handle.get_webview_window(crate::window::WINDOW_LABEL) else { return };
+                    let pos = w.outer_position().unwrap_or_default();
+                    let size = w.outer_size().unwrap_or_default();
+                    let bounds = crate::window_state::Bounds {
+                        x: pos.x,
+                        y: pos.y,
+                        width: size.width,
+                        height: size.height,
+                    };
+                    let writer = state.window_state_writer.clone();
+                    tauri::async_runtime::spawn(async move {
+                        writer.schedule(bounds).await;
+                    });
+                }
+            });
+
             if !crate::selection::ax::is_accessibility_trusted() {
                 eprintln!(
                     "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
