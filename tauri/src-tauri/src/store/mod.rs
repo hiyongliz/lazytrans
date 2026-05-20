@@ -1,7 +1,6 @@
-// TODO(T4.4): uncomment when settings.rs is created
 pub mod history;
 pub mod preferences;
-// pub mod settings;
+pub mod settings;
 
 use std::path::{Path, PathBuf};
 use serde::{de::DeserializeOwned, Serialize};

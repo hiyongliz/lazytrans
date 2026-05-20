@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod env;
 pub mod errors;
 pub mod selection;
 pub mod shortcuts;
