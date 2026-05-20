@@ -38,6 +38,7 @@ core-graphics = "0.25"
 core-foundation = "0.10"
 
 dotenvy = "0.15"
+rand = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"

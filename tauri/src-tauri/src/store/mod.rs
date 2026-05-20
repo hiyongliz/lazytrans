@@ -1,5 +1,5 @@
-// TODO(T4.3/T4.4): uncomment when the submodules are created
-// pub mod history;
+// TODO(T4.4): uncomment when settings.rs is created
+pub mod history;
 pub mod preferences;
 // pub mod settings;
 
