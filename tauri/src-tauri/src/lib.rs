@@ -49,10 +49,7 @@ pub fn run() {
             }
 
             let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                show_translate_window(&app, false);
-                // T2.x will add: get_selected_text → translate_input
-            });
+            tauri::async_runtime::spawn(handle_translate_shortcut(app));
         })
         .build();
 
@@ -72,4 +69,71 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+async fn handle_translate_shortcut(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    use commands::TranslationState;
+    use selection::tauri_clipboard::TauriClipboard;
+
+    let label = app
+        .try_state::<AppState>()
+        .map(|s| s.shortcut_label.read().unwrap().clone())
+        .unwrap_or_else(|| "Option + D".into());
+
+    show_translate_window(&app, false);
+    let _ = app.emit(
+        "translation:update",
+        TranslationState {
+            status: "loading".into(),
+            phase: Some("reading-selection".into()),
+            source_text: String::new(),
+            translated_text: String::new(),
+            error_message: "正在读取选中文本...".into(),
+            error_code: None,
+            shortcut_label: Some(label.clone()),
+            phonetic: None,
+        },
+    );
+
+    let clipboard = TauriClipboard::new(app.clone());
+    let res = selection::get_selected_text(&clipboard).await;
+    match res {
+        Ok(text) if !text.is_empty() => {
+            show_translate_window(&app, true);
+            let state = app.state::<AppState>();
+            let _ = commands::translate_input(app.clone(), state, text).await;
+        }
+        Ok(_) => {
+            let _ = app.emit(
+                "translation:update",
+                TranslationState {
+                    status: "empty".into(),
+                    phase: None,
+                    source_text: String::new(),
+                    translated_text: String::new(),
+                    error_message: "没有获取到选中文本".into(),
+                    error_code: None,
+                    shortcut_label: Some(label),
+                    phonetic: None,
+                },
+            );
+        }
+        Err(e) => {
+            let code = commands::error_code(&e).to_string();
+            let _ = app.emit(
+                "translation:update",
+                TranslationState {
+                    status: "error".into(),
+                    phase: None,
+                    source_text: String::new(),
+                    translated_text: String::new(),
+                    error_message: e.to_string(),
+                    error_code: Some(code),
+                    shortcut_label: Some(label),
+                    phonetic: None,
+                },
+            );
+        }
+    }
 }

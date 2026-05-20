@@ -1,6 +1,7 @@
 pub mod ax;
 pub mod permissions;
 pub mod simulated_copy;
+pub mod tauri_clipboard;
 
 use std::time::{Duration, Instant};
 use async_trait::async_trait;
