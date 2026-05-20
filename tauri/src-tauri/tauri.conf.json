@@ -20,7 +20,8 @@
     "active": true,
     "targets": ["app"],
     "icon": ["icons/icon.icns"],
-    "category": "Productivity"
+    "category": "Productivity",
+    "resources": ["icons/trayIconTemplate*.png"]
   },
   "plugins": {}
 }

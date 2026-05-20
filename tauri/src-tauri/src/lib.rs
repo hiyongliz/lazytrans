@@ -3,6 +3,7 @@ pub mod errors;
 pub mod selection;
 pub mod shortcuts;
 pub mod state;
+pub mod tray;
 pub mod translator;
 pub mod window;
 
@@ -72,6 +73,7 @@ pub fn run() {
                     "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
                 );
             }
+            let _ = tray::setup_tray(app.handle());
             Ok(())
         })
         .run(tauri::generate_context!())
