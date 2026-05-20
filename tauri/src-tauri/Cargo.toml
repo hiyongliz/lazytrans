@@ -45,3 +45,10 @@ url = "2"
 wiremock = "0.6"
 tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
