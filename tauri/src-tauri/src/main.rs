@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod spike_ax;
+
 use std::time::Duration;
 use core_graphics::event::{CGEvent, CGEventFlags, CGEventTapLocation};
 use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
@@ -36,6 +38,8 @@ fn main() {
                     println!("[spike] Alt+D 触发");
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
+                        println!("[spike] AX trusted = {}", spike_ax::is_accessibility_trusted());
+                        println!("[spike] AX selected = {:?}", spike_ax::read_focused_selection());
                         // 备份剪贴板
                         let prev = app.clipboard().read_text().unwrap_or_default();
                         let _ = app.clipboard().write_text(String::new());
