@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod errors;
+pub mod selection;
 pub mod shortcuts;
 pub mod state;
 pub mod translator;
