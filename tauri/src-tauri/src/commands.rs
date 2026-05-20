@@ -11,6 +11,7 @@ use crate::store::{
     settings::{apply_to_env, complete, ApiSettings},
     write_json_atomic,
 };
+use crate::translator::phonetic::{fetch_phonetic, is_single_english_word};
 use crate::translator::prompts::TranslateDirection;
 use crate::translator::{translate_text_stream, TranslateStreamOptions};
 
@@ -142,6 +143,19 @@ pub async fn translate_input(
 
     match res {
         Ok(translated) => {
+            let phonetic_word = if is_single_english_word(&source) {
+                Some(source.as_str())
+            } else if is_single_english_word(&translated) {
+                Some(translated.as_str())
+            } else {
+                None
+            };
+            let phonetic = if let Some(word) = phonetic_word {
+                fetch_phonetic(word, &cfg, &state.cache, Some(&cancel)).await
+            } else {
+                None
+            };
+
             emit_state(&app, TranslationState {
                 status: "success".into(),
                 phase: None,
@@ -150,7 +164,7 @@ pub async fn translate_input(
                 error_message: String::new(),
                 error_code: None,
                 shortcut_label: Some(shortcut_label),
-                phonetic: None,
+                phonetic,
             });
 
             // 写入历史: 成功才记录, 直接复用 history::append 的 dedupe + cap 逻辑
