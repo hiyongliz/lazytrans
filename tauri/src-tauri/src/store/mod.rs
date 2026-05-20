@@ -1,6 +1,6 @@
-// TODO(T4.2/T4.3/T4.4): uncomment when the submodules are created
+// TODO(T4.3/T4.4): uncomment when the submodules are created
 // pub mod history;
-// pub mod preferences;
+pub mod preferences;
 // pub mod settings;
 
 use std::path::{Path, PathBuf};
