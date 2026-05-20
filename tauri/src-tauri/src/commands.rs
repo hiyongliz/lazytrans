@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
+use tauri_plugin_shell::ShellExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{AppError, Result};
@@ -28,18 +29,31 @@ fn emit_state(app: &AppHandle, state: TranslationState) {
     let _ = app.emit("translation:update", state);
 }
 
-pub fn error_code(e: &AppError) -> &'static str {
+pub fn error_code(e: &AppError) -> String {
     match e {
-        AppError::MissingApiKey(_) => "missing_api_key",
-        AppError::Network(_) => "network",
-        AppError::Timeout(_) => "timeout",
-        AppError::Api(_) => "api",
-        AppError::ApiResponseInvalid(_) => "api_response_invalid",
-        AppError::Cancelled => "cancelled",
-        AppError::Io(_) => "io",
-        AppError::Selection(_) => "selection",
-        AppError::AccessibilityDenied => "accessibility_denied",
-        AppError::InputMonitoringDenied => "input_monitoring_denied",
+        AppError::MissingApiKey(_) => "missing-api-key".into(),
+        AppError::Network(_) => "network".into(),
+        AppError::Timeout(_) => "api-timeout".into(),
+        AppError::ApiResponseInvalid(_) => "api-error".into(),
+        AppError::Cancelled => "api-error".into(),
+        AppError::Io(_) => "api-error".into(),
+        AppError::Selection(_) => "selection-permission".into(),
+        AppError::AccessibilityDenied => "selection-permission".into(),
+        AppError::InputMonitoringDenied => "selection-permission".into(),
+        AppError::Api(msg) => {
+            let m = msg.to_lowercase();
+            if m.contains("401")
+                || m.contains("unauthorized")
+                || m.contains("incorrect api key")
+                || m.contains("invalid api key")
+            {
+                "auth-failed".into()
+            } else if m.contains("429") || m.contains("rate limit") || m.contains("quota") {
+                "rate-limited".into()
+            } else {
+                "api-error".into()
+            }
+        }
     }
 }
 
@@ -136,7 +150,7 @@ pub async fn translate_input(
             // 取消由 cancel_translation 命令负责推送 state，这里不重复
         }
         Err(e) => {
-            let code = error_code(&e).to_string();
+            let code = error_code(&e);
             emit_state(&app, TranslationState {
                 status: "error".into(),
                 phase: None,
@@ -198,4 +212,66 @@ pub fn update_manual_input(state: State<'_, AppState>, text: String) -> Result<(
 pub fn hide_window(window: tauri::WebviewWindow) -> Result<()> {
     let _ = window.hide();
     Ok(())
+}
+
+#[tauri::command]
+pub async fn open_accessibility_settings(app: AppHandle) -> Result<()> {
+    #[allow(deprecated)]
+    app.shell()
+        .open(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            None,
+        )
+        .map_err(|e| AppError::Io(e.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_missing_api_key() {
+        assert_eq!(error_code(&AppError::MissingApiKey("x".into())), "missing-api-key");
+    }
+
+    #[test]
+    fn maps_network() {
+        assert_eq!(error_code(&AppError::Network("x".into())), "network");
+    }
+
+    #[test]
+    fn maps_timeout() {
+        assert_eq!(error_code(&AppError::Timeout("x".into())), "api-timeout");
+    }
+
+    #[test]
+    fn maps_selection_permissions() {
+        assert_eq!(error_code(&AppError::AccessibilityDenied), "selection-permission");
+        assert_eq!(error_code(&AppError::InputMonitoringDenied), "selection-permission");
+        assert_eq!(error_code(&AppError::Selection("x".into())), "selection-permission");
+    }
+
+    #[test]
+    fn api_401_maps_to_auth_failed() {
+        assert_eq!(
+            error_code(&AppError::Api("HTTP 401 Unauthorized: invalid api key".into())),
+            "auth-failed"
+        );
+    }
+
+    #[test]
+    fn api_429_maps_to_rate_limited() {
+        assert_eq!(
+            error_code(&AppError::Api("429 Too Many Requests: rate limit exceeded".into())),
+            "rate-limited"
+        );
+    }
+
+    #[test]
+    fn api_other_maps_to_api_error() {
+        assert_eq!(
+            error_code(&AppError::Api("500 Internal Server Error".into())),
+            "api-error"
+        );
+    }
 }

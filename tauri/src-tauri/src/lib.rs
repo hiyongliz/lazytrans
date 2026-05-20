@@ -56,15 +56,22 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(sc_plugin)
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
         .invoke_handler(tauri::generate_handler![
             commands::translate_input,
             commands::cancel_translation,
             commands::update_manual_input,
             commands::hide_window,
+            commands::open_accessibility_settings,
         ])
         .setup(|app| {
             let _ = ensure_translate_window(app.handle());
+            if !crate::selection::ax::is_accessibility_trusted() {
+                eprintln!(
+                    "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
+                );
+            }
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -120,7 +127,7 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
             );
         }
         Err(e) => {
-            let code = commands::error_code(&e).to_string();
+            let code = commands::error_code(&e);
             let _ = app.emit(
                 "translation:update",
                 TranslationState {
