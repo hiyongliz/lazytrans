@@ -2,13 +2,22 @@ export type TranslationStatus = 'idle' | 'loading' | 'success' | 'empty' | 'erro
 export type TranslationPhase = 'reading-selection' | 'translating'
 export type TranslateDirection = 'auto' | 'zh-en' | 'en-zh'
 
+export type TranslationErrorCode =
+  | 'missing-api-key'
+  | 'auth-failed'
+  | 'rate-limited'
+  | 'api-timeout'
+  | 'selection-permission'
+  | 'network'
+  | 'api-error'
+
 export interface TranslationState {
   status: TranslationStatus
   phase?: TranslationPhase
   sourceText: string
   translatedText: string
   errorMessage: string
-  errorCode?: string
+  errorCode?: TranslationErrorCode
   shortcutLabel?: string
   manualInputText?: string
   phonetic?: string
