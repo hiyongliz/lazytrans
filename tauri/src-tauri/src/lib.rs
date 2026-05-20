@@ -81,7 +81,7 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
         .map(|s| s.shortcut_label.read().unwrap().clone())
         .unwrap_or_else(|| "Option + D".into());
 
-    show_translate_window(&app, false);
+    show_translate_window(&app, false, true);
     let _ = app.emit(
         "translation:update",
         TranslationState {
@@ -100,7 +100,7 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
     let res = selection::get_selected_text(&clipboard).await;
     match res {
         Ok(text) if !text.is_empty() => {
-            show_translate_window(&app, true);
+            show_translate_window(&app, true, false);
             let state = app.state::<AppState>();
             let _ = commands::translate_input(app.clone(), state, text).await;
         }
