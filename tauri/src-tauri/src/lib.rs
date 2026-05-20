@@ -55,6 +55,9 @@ pub fn run() {
         .build();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_translate_window(app, true, false);
+        }))
         .plugin(sc_plugin)
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_shell::init())
@@ -72,6 +75,15 @@ pub fn run() {
                 eprintln!(
                     "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
                 );
+            }
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+                use objc2_foundation::MainThreadMarker;
+                if let Some(mtm) = MainThreadMarker::new() {
+                    let ns_app = NSApplication::sharedApplication(mtm);
+                    ns_app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+                }
             }
             let _ = tray::setup_tray(app.handle());
             Ok(())
