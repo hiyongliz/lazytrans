@@ -7,7 +7,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
-const KEY_C: u16 = 8;
+const KEY_C: u16 = 8; // macOS virtual keycode for 'C' (kVK_ANSI_C)
 
 fn simulate_cmd_c() {
     let src = match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
