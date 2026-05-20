@@ -8,6 +8,7 @@ pub mod store;
 pub mod tray;
 pub mod translator;
 pub mod window;
+pub mod window_state;
 
 use tauri::Manager;
 use tauri_plugin_global_shortcut::{Builder as GlobalShortcutBuilder, ShortcutState as TauriShortcutState};
