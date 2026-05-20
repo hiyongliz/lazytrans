@@ -1,4 +1,6 @@
+pub mod commands;
 pub mod errors;
+pub mod state;
 pub mod translator;
 
 pub fn run() {
