@@ -70,6 +70,15 @@ pub fn run() {
             commands::update_manual_input,
             commands::hide_window,
             commands::open_accessibility_settings,
+            commands::get_api_settings,
+            commands::save_api_settings,
+            commands::test_api_settings,
+            commands::list_history,
+            commands::clear_history,
+            commands::remove_history_entry,
+            commands::translate_history_entry,
+            commands::get_preferences,
+            commands::patch_preferences,
         ])
         .setup(|app| {
             crate::env::load_dotenv_files(app.handle());

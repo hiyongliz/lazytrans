@@ -39,6 +39,7 @@ core-foundation = "0.10"
 
 dotenvy = "0.15"
 rand = "0.8"
+url = "2"
 
 [dev-dependencies]
 wiremock = "0.6"

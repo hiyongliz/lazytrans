@@ -5,8 +5,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::errors::{AppError, Result};
 use crate::state::AppState;
-use crate::translator::{translate_text_stream, TranslateStreamOptions};
+use crate::store::{
+    history::{self, CreateInput, HistoryEntry},
+    preferences::{merge, promote_recent_model, Preferences, PreferencesPatch},
+    settings::{apply_to_env, complete, ApiSettings},
+    write_json_atomic,
+};
 use crate::translator::prompts::TranslateDirection;
+use crate::translator::{translate_text_stream, TranslateStreamOptions};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +122,7 @@ pub async fn translate_input(
             direction,
             timeout: std::time::Duration::from_millis(15000),
             cancel: Some(&cancel),
+            cache: Some(&state.cache),
             on_delta: Box::new(move |d| {
                 streamed.push_str(d);
                 emit_state(&app_for_delta, TranslationState {
@@ -138,13 +145,29 @@ pub async fn translate_input(
             emit_state(&app, TranslationState {
                 status: "success".into(),
                 phase: None,
-                source_text: source,
-                translated_text: translated,
+                source_text: source.clone(),
+                translated_text: translated.clone(),
                 error_message: String::new(),
                 error_code: None,
                 shortcut_label: Some(shortcut_label),
                 phonetic: None,
             });
+
+            // 写入历史: 成功才记录, 直接复用 history::append 的 dedupe + cap 逻辑
+            let entry = history::create_entry(CreateInput {
+                source_text: &source,
+                translated_text: &translated,
+                model: &cfg.model,
+                base_url: &cfg.base_url,
+                direction,
+            });
+            let history_path = state.paths.history();
+            let next_history = {
+                let mut h = state.history.write().unwrap();
+                *h = history::append(h.clone(), entry);
+                h.clone()
+            };
+            let _ = write_json_atomic(&history_path, &next_history);
         }
         Err(AppError::Cancelled) => {
             // 取消由 cancel_translation 命令负责推送 state，这里不重复
@@ -223,6 +246,138 @@ pub async fn open_accessibility_settings(app: AppHandle) -> Result<()> {
             None,
         )
         .map_err(|e| AppError::Io(e.to_string()))
+}
+
+#[tauri::command]
+pub fn get_api_settings(state: State<'_, AppState>) -> ApiSettings {
+    state.api_settings.read().unwrap().clone()
+}
+
+fn validate_api_settings(s: ApiSettings) -> Result<ApiSettings> {
+    if s.api_key.is_empty() {
+        return Err(AppError::Selection("请输入 API Key".into()));
+    }
+    if s.base_url.is_empty() {
+        return Err(AppError::Selection("请输入 API 地址".into()));
+    }
+    if url::Url::parse(&s.base_url).is_err() {
+        return Err(AppError::Selection("API 地址格式无效".into()));
+    }
+    if s.model.is_empty() {
+        return Err(AppError::Selection("请输入模型名称".into()));
+    }
+    Ok(s)
+}
+
+#[tauri::command]
+pub fn save_api_settings(
+    state: State<'_, AppState>,
+    settings: ApiSettings,
+) -> Result<ApiSettings> {
+    let validated = validate_api_settings(complete(settings))?;
+    write_json_atomic(&state.paths.settings(), &validated)?;
+    apply_to_env(&validated);
+    *state.api_settings.write().unwrap() = validated.clone();
+    *state.config.write().unwrap() = crate::translator::TranslateConfig::from_env();
+
+    let prefs_path = state.paths.preferences();
+    let prefs_snapshot = {
+        let mut prefs = state.preferences.write().unwrap();
+        prefs.recent_models = promote_recent_model(&prefs.recent_models, &validated.model);
+        prefs.clone()
+    };
+    let _ = write_json_atomic(&prefs_path, &prefs_snapshot);
+    Ok(validated)
+}
+
+#[tauri::command]
+pub async fn test_api_settings(settings: ApiSettings) -> Result<serde_json::Value> {
+    let cfg = validate_api_settings(complete(settings))?;
+    let config = crate::translator::TranslateConfig {
+        api_key: cfg.api_key,
+        base_url: cfg.base_url,
+        model: cfg.model,
+    };
+    crate::translator::translate_text_stream(
+        ".",
+        &config,
+        crate::translator::TranslateStreamOptions {
+            timeout: std::time::Duration::from_millis(5000),
+            ..Default::default()
+        },
+    )
+    .await?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+pub fn list_history(state: State<'_, AppState>) -> Vec<HistoryEntry> {
+    state.history.read().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn clear_history(state: State<'_, AppState>) -> Result<()> {
+    let history_path = state.paths.history();
+    let snapshot = {
+        let mut h = state.history.write().unwrap();
+        h.clear();
+        h.clone()
+    };
+    write_json_atomic(&history_path, &snapshot)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn remove_history_entry(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Vec<HistoryEntry>> {
+    let history_path = state.paths.history();
+    let next = {
+        let mut h = state.history.write().unwrap();
+        let next = history::remove(h.clone(), &id);
+        *h = next.clone();
+        next
+    };
+    write_json_atomic(&history_path, &next)?;
+    Ok(next)
+}
+
+#[tauri::command]
+pub async fn translate_history_entry(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<()> {
+    let entry = state
+        .history
+        .read()
+        .unwrap()
+        .iter()
+        .find(|e| e.id == id)
+        .cloned();
+    let Some(entry) = entry else {
+        return Ok(());
+    };
+    translate_input(app, state, entry.source_text).await
+}
+
+#[tauri::command]
+pub fn get_preferences(state: State<'_, AppState>) -> Preferences {
+    state.preferences.read().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn patch_preferences(
+    state: State<'_, AppState>,
+    patch: PreferencesPatch,
+) -> Result<Preferences> {
+    let prefs_path = state.paths.preferences();
+    let cur = state.preferences.read().unwrap().clone();
+    let next = merge(cur, patch);
+    *state.preferences.write().unwrap() = next.clone();
+    write_json_atomic(&prefs_path, &next)?;
+    Ok(next)
 }
 
 #[cfg(test)]

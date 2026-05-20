@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod phonetic;
 pub mod prompts;
 pub mod sse;
 
@@ -7,6 +8,7 @@ use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{AppError, Result};
+use crate::translator::cache::{CacheKey, TranslateCache};
 use prompts::TranslateDirection;
 
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -58,6 +60,7 @@ pub struct TranslateStreamOptions<'a> {
     pub direction: TranslateDirection,
     pub timeout: Duration,
     pub cancel: Option<&'a CancellationToken>,
+    pub cache: Option<&'a TranslateCache>,
     pub on_delta: Box<dyn FnMut(&str) + Send + 'a>,
 }
 
@@ -67,6 +70,7 @@ impl<'a> Default for TranslateStreamOptions<'a> {
             direction: TranslateDirection::Auto,
             timeout: Duration::from_millis(API_REQUEST_TIMEOUT_MS),
             cancel: None,
+            cache: None,
             on_delta: Box::new(|_| {}),
         }
     }
@@ -85,6 +89,21 @@ pub async fn translate_text_stream(
     let source = text.trim();
     if source.is_empty() {
         return Ok(String::new());
+    }
+
+    // 缓存命中: 直接回放完整结果作为一次 delta, 然后返回
+    if let Some(cache) = options.cache {
+        let key = CacheKey {
+            text: source.to_string(),
+            model: config.model.clone(),
+            base_url: config.base_url.clone(),
+            direction: format!("{:?}", options.direction).to_lowercase(),
+            kind: "translation".into(),
+        };
+        if let Some(cached) = cache.get(&key) {
+            (options.on_delta)(&cached);
+            return Ok(cached);
+        }
     }
 
     let body = serde_json::to_vec(&ChatRequest {
@@ -142,6 +161,7 @@ pub async fn translate_text_stream(
             ));
         }
         (options.on_delta)(&translated);
+        store_in_cache(options.cache, source, config, options.direction, &translated);
         return Ok(translated);
     }
 
@@ -178,7 +198,26 @@ pub async fn translate_text_stream(
             "API response did not include translated text".into(),
         ));
     }
+    store_in_cache(options.cache, source, config, options.direction, &translated);
     Ok(translated)
+}
+
+fn store_in_cache(
+    cache: Option<&TranslateCache>,
+    source: &str,
+    config: &TranslateConfig,
+    direction: TranslateDirection,
+    translated: &str,
+) {
+    let Some(cache) = cache else { return };
+    let key = CacheKey {
+        text: source.to_string(),
+        model: config.model.clone(),
+        base_url: config.base_url.clone(),
+        direction: format!("{:?}", direction).to_lowercase(),
+        kind: "translation".into(),
+    };
+    cache.set(key, translated.to_string());
 }
 
 async fn cancel_signal(cancel: Option<&CancellationToken>) {

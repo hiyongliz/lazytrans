@@ -16,9 +16,20 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
     if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
         return Ok(win);
     }
-    let win = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
+
+    let stored_bounds = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .and_then(|d| crate::window_state::read(&d.join("window-state.json")).bounds);
+
+    let (w, h) = stored_bounds
+        .map(|b| (b.width as f64, b.height as f64))
+        .unwrap_or((WINDOW_WIDTH, WINDOW_HEIGHT));
+
+    let mut builder = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
         .title("LazyTrans")
-        .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
+        .inner_size(w, h)
         .min_inner_size(360.0, 400.0)
         .decorations(false)
         .transparent(true)
@@ -30,8 +41,11 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
         .minimizable(false)
         .skip_taskbar(true)
         .visible(false)
-        .visible_on_all_workspaces(true)
-        .build()?;
+        .visible_on_all_workspaces(true);
+    if let Some(b) = stored_bounds {
+        builder = builder.position(b.x as f64, b.y as f64);
+    }
+    let win = builder.build()?;
 
     let win_for_close = win.clone();
     win.on_window_event(move |event| {
