@@ -3,6 +3,7 @@ pub mod errors;
 pub mod selection;
 pub mod shortcuts;
 pub mod state;
+pub mod store;
 pub mod tray;
 pub mod translator;
 pub mod window;
