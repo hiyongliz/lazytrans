@@ -1,4 +1,5 @@
 pub mod errors;
+pub mod translator;
 
 pub fn run() {
     tauri::Builder::default()
