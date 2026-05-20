@@ -16,7 +16,7 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
     if let Some(win) = app.get_webview_window(WINDOW_LABEL) {
         return Ok(win);
     }
-    WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
+    let win = WebviewWindowBuilder::new(app, WINDOW_LABEL, WebviewUrl::default())
         .title("LazyTrans")
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .min_inner_size(360.0, 400.0)
@@ -31,7 +31,17 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
         .skip_taskbar(true)
         .visible(false)
         .visible_on_all_workspaces(true)
-        .build()
+        .build()?;
+
+    let win_for_close = win.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            let _ = win_for_close.hide();
+        }
+    });
+
+    Ok(win)
 }
 
 pub fn show_translate_window(app: &AppHandle, focus: bool, reposition: bool) {
