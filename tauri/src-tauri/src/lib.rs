@@ -16,6 +16,15 @@ use tauri_plugin_global_shortcut::{Builder as GlobalShortcutBuilder, ShortcutSta
 use state::AppState;
 use window::{ensure_translate_window, show_translate_window};
 
+fn chrono_like_now() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("ts={}", secs)
+}
+
 pub fn run() {
     let candidates = shortcuts::candidates();
 
@@ -134,15 +143,33 @@ pub fn run() {
                 }
             });
 
-            if !crate::selection::ax::is_accessibility_trusted() {
-                eprintln!(
-                    "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
+            // 启动诊断: 写一行到 ~/Library/Logs/LazyTrans/startup.log
+            // 因为 .app 启动时 stderr 被 launchd 截走, eprintln 看不到.
+            {
+                let trusted = crate::selection::ax::is_accessibility_trusted();
+                let exe = std::env::current_exe()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "(unknown)".into());
+                let line = format!(
+                    "[{}] AX trusted = {}  exe = {}\n",
+                    chrono_like_now(),
+                    trusted,
+                    exe
                 );
-                if let Ok(exe) = std::env::current_exe() {
-                    eprintln!("[warn] grant AX permission to this exact binary: {}", exe.display());
+                eprintln!("{}", line.trim());
+                if let Some(home) = std::env::var_os("HOME") {
+                    let log_dir = std::path::PathBuf::from(home).join("Library/Logs/LazyTrans");
+                    let _ = std::fs::create_dir_all(&log_dir);
+                    let log_path = log_dir.join("startup.log");
+                    use std::io::Write;
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log_path)
+                    {
+                        let _ = f.write_all(line.as_bytes());
+                    }
                 }
-            } else {
-                eprintln!("[info] Accessibility trusted ✓");
             }
             #[cfg(target_os = "macos")]
             {
@@ -210,6 +237,15 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
         }
         Err(e) => {
             let code = commands::error_code(&e);
+            eprintln!("[shortcut-err] code={} msg={}", code, e);
+            if let Some(home) = std::env::var_os("HOME") {
+                use std::io::Write;
+                let log_path = std::path::PathBuf::from(home)
+                    .join("Library/Logs/LazyTrans/startup.log");
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+                    let _ = writeln!(f, "[{}] [shortcut-err] code={} msg={}", chrono_like_now(), code, e);
+                }
+            }
             let _ = app.emit(
                 "translation:update",
                 TranslationState {
