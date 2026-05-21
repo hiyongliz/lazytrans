@@ -279,6 +279,11 @@ export default function App(): ReactElement {
 
   useEffect(() => {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent): void => {
+      if (event.metaKey && event.key === 'w') {
+        event.preventDefault()
+        closeWindow()
+        return
+      }
       if (event.key !== 'Escape') return
       event.preventDefault()
       if (historyClearArmed) {
@@ -670,7 +675,17 @@ export default function App(): ReactElement {
   return (
     <main className="h-full w-full p-2">
       <Card className="relative flex h-full w-full flex-col overflow-hidden">
-        <header data-tauri-drag-region className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
+        <header
+          data-tauri-drag-region
+          onMouseDown={async (e) => {
+            if (e.button !== 0) return
+            const target = e.target as HTMLElement
+            if (target.closest('button,input,textarea,a,[role="button"]')) return
+            const { getCurrentWindow } = await import('@tauri-apps/api/window')
+            await getCurrentWindow().startDragging()
+          }}
+          className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2"
+        >
           <div className="no-drag flex items-center gap-0.5">
             <Button
               type="button"
