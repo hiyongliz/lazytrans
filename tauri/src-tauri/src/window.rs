@@ -47,6 +47,9 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
     }
     let win = builder.build()?;
 
+    #[cfg(target_os = "macos")]
+    enable_borderless_drag(&win);
+
     let win_for_close = win.clone();
     win.on_window_event(move |event| {
         if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -56,6 +59,27 @@ pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> 
     });
 
     Ok(win)
+}
+
+#[cfg(target_os = "macos")]
+fn enable_borderless_drag(win: &WebviewWindow) {
+    // Borderless (decorations:false) NSWindow defaults to movable=true, but
+    // some macOS versions / NSPanel subclasses end up with movable=false.
+    // Force it on so that data-tauri-drag-region's startDragging() works.
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    let Ok(ptr) = win.ns_window() else { return };
+    let ns_window = ptr as *mut AnyObject;
+    if ns_window.is_null() {
+        return;
+    }
+    unsafe {
+        let _: () = msg_send![ns_window, setMovable: true];
+        // Optional: also set movableByWindowBackground so the entire window
+        // body (not just data-tauri-drag-region elements) can initiate drag.
+        // We keep it off to preserve precise drag regions in the UI.
+        let _: () = msg_send![ns_window, setMovableByWindowBackground: false];
+    }
 }
 
 pub fn show_translate_window(app: &AppHandle, focus: bool, reposition: bool) {
