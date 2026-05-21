@@ -35,11 +35,8 @@ export const lazyTrans = {
   translateHistoryEntry: (id: string)   => invoke<void>('translate_history_entry', { id }),
   getPreferences:        ()             => invoke<Preferences>('get_preferences'),
   patchPreferences:      (patch: Partial<Preferences>) =>
-    invoke<Preferences>('patch_preferences', { patch })
-}
-
-declare global {
-  interface Window { lazyTrans: typeof lazyTrans }
+    invoke<Preferences>('patch_preferences', { patch }),
+  writeClipboard:        (text: string)  => invoke<void>('write_clipboard', { text })
 }
 
 window.lazyTrans = lazyTrans

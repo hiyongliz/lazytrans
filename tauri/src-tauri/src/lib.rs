@@ -79,6 +79,7 @@ pub fn run() {
             commands::translate_history_entry,
             commands::get_preferences,
             commands::patch_preferences,
+            commands::write_clipboard,
         ])
         .setup(|app| {
             crate::env::load_dotenv_files(app.handle());

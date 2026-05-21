@@ -263,6 +263,14 @@ pub async fn open_accessibility_settings(app: AppHandle) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn write_clipboard(app: AppHandle, text: String) -> Result<()> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    app.clipboard()
+        .write_text(text)
+        .map_err(|e| AppError::Io(e.to_string()))
+}
+
+#[tauri::command]
 pub fn get_api_settings(state: State<'_, AppState>) -> ApiSettings {
     state.api_settings.read().unwrap().clone()
 }

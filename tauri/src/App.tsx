@@ -516,7 +516,7 @@ export default function App(): ReactElement {
       copyResetTimer.current = null
     }
     try {
-      await navigator.clipboard.writeText(text)
+      await window.lazyTrans.writeClipboard(text)
       setCopyStatus(target)
     } catch {
       setCopyStatus('error')

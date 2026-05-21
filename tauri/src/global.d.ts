@@ -21,6 +21,7 @@ declare global {
       translateHistoryEntry: (id: string) => Promise<void>
       getPreferences: () => Promise<Preferences>
       patchPreferences: (patch: Partial<Preferences>) => Promise<Preferences>
+      writeClipboard: (text: string) => Promise<void>
     }
   }
 }
