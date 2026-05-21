@@ -670,7 +670,7 @@ export default function App(): ReactElement {
   return (
     <main className="h-full w-full p-2">
       <Card className="relative flex h-full w-full flex-col overflow-hidden">
-        <header className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
+        <header data-tauri-drag-region className="drag-region flex h-11 shrink-0 items-center justify-between border-b px-2">
           <div className="no-drag flex items-center gap-0.5">
             <Button
               type="button"

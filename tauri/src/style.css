@@ -76,14 +76,6 @@
   }
 }
 
-/* electron drag regions — required for frameless windows */
-.drag-region {
-  -webkit-app-region: drag;
-}
-.no-drag {
-  -webkit-app-region: no-drag;
-}
-
 /* match native textarea scrollbar to the Radix ScrollArea thumb */
 textarea {
   scrollbar-width: thin;
