@@ -271,6 +271,11 @@ pub fn write_clipboard(app: AppHandle, text: String) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn check_accessibility() -> bool {
+    crate::selection::ax::is_accessibility_trusted()
+}
+
+#[tauri::command]
 pub fn get_api_settings(state: State<'_, AppState>) -> ApiSettings {
     state.api_settings.read().unwrap().clone()
 }

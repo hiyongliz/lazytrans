@@ -279,11 +279,6 @@ export default function App(): ReactElement {
 
   useEffect(() => {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.metaKey && event.key === 'w') {
-        event.preventDefault()
-        closeWindow()
-        return
-      }
       if (event.key !== 'Escape') return
       event.preventDefault()
       if (historyClearArmed) {

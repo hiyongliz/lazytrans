@@ -80,11 +80,35 @@ pub fn run() {
             commands::get_preferences,
             commands::patch_preferences,
             commands::write_clipboard,
+            commands::check_accessibility,
         ])
         .setup(|app| {
             crate::env::load_dotenv_files(app.handle());
             let state = AppState::init(app.handle());
             app.manage(state);
+
+            // 注册一个最小应用菜单, 主要为了让 Cmd+W 的菜单 accelerator 生效.
+            // macOS Accessory app 不显示菜单栏, 但菜单项的快捷键仍由 NSWindow.performKeyEquivalent
+            // 路径拦截, 所以即使菜单不可见, Cmd+W 也能命中 close_window 事件.
+            use tauri::menu::{Menu, MenuItem, Submenu};
+            let close_item = MenuItem::with_id(
+                app.handle(),
+                "close_window",
+                "Close Window",
+                true,
+                Some("CmdOrCtrl+W"),
+            )?;
+            let window_submenu =
+                Submenu::with_items(app.handle(), "Window", true, &[&close_item])?;
+            let app_menu = Menu::with_items(app.handle(), &[&window_submenu])?;
+            app.set_menu(app_menu)?;
+            app.on_menu_event(|app, event| {
+                if event.id().as_ref() == "close_window" {
+                    if let Some(w) = app.get_webview_window(crate::window::WINDOW_LABEL) {
+                        let _ = w.hide();
+                    }
+                }
+            });
 
             let win = ensure_translate_window(app.handle())?;
 
@@ -114,6 +138,11 @@ pub fn run() {
                 eprintln!(
                     "[warn] Accessibility not trusted — selection reading via AX will fail until granted in System Settings"
                 );
+                if let Ok(exe) = std::env::current_exe() {
+                    eprintln!("[warn] grant AX permission to this exact binary: {}", exe.display());
+                }
+            } else {
+                eprintln!("[info] Accessibility trusted ✓");
             }
             #[cfg(target_os = "macos")]
             {
