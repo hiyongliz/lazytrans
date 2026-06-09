@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   cycleDirection,
   displayDirection,
+  displayTheme,
   errorActionsFor,
   filterHistory,
   formatHistoryTimestamp,
@@ -159,6 +160,14 @@ describe('translate direction', () => {
     expect(displayDirection('auto')).toBe('自动')
     expect(displayDirection('zh-en')).toBe('中→英')
     expect(displayDirection('en-zh')).toBe('英→中')
+  })
+})
+
+describe('theme preference', () => {
+  it('exposes a short human label for each theme option', () => {
+    expect(displayTheme('system')).toBe('系统')
+    expect(displayTheme('light')).toBe('浅色')
+    expect(displayTheme('dark')).toBe('深色')
   })
 })
 

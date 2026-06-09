@@ -22,8 +22,25 @@ pub struct WindowState {
     pub bounds: Option<Bounds>,
 }
 
+const MIN_WIDTH: u32 = 360;
+const MIN_HEIGHT: u32 = 400;
+const DEFAULT_WIDTH: u32 = 460;
+const DEFAULT_HEIGHT: u32 = 520;
+const MAX_WIDTH: u32 = 700;
+const MAX_HEIGHT: u32 = 800;
+
 pub fn read(path: &PathBuf) -> WindowState {
-    read_json_or_default(path)
+    let mut state: WindowState = read_json_or_default(path);
+    if let Some(bounds) = state.bounds.as_mut() {
+        if bounds.width > MAX_WIDTH || bounds.height > MAX_HEIGHT {
+            bounds.width = DEFAULT_WIDTH;
+            bounds.height = DEFAULT_HEIGHT;
+        } else {
+            bounds.width = bounds.width.clamp(MIN_WIDTH, MAX_WIDTH);
+            bounds.height = bounds.height.clamp(MIN_HEIGHT, MAX_HEIGHT);
+        }
+    }
+    state
 }
 
 #[derive(Clone)]

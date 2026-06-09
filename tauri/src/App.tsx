@@ -11,12 +11,14 @@ import {
   ExternalLink,
   Languages,
   Loader2,
-  MoonStar,
+  Monitor,
+  Moon,
   Pause,
   RefreshCw,
   Search,
   Settings,
   Square,
+  Sun,
   Trash2,
   Volume2,
   X
@@ -24,16 +26,13 @@ import {
 
 import type { ApiSettings } from './lib/types'
 import type { HistoryEntry } from './lib/types'
-import type {
-  Preferences,
-  ThemePreference,
-  TranslateDirection
-} from './lib/types'
+import type { Preferences, ThemePreference, TranslateDirection } from './lib/types'
 import { PROVIDER_PRESETS, findProviderByBaseUrl } from './lib/providers'
 import type { TranslationState } from './lib/types'
 import {
   cycleDirection,
   displayDirection,
+  displayTheme,
   errorActionsFor,
   filterHistory,
   formatHistoryTimestamp,
@@ -90,6 +89,8 @@ const DOT_TONE: Record<TranslationState['status'], string> = {
   cancelled: 'bg-amber-500/60'
 }
 
+const THEME_OPTIONS: ThemePreference[] = ['system', 'light', 'dark']
+
 export default function App(): ReactElement {
   const [translation, setTranslation] = useState<TranslationState>(initialState)
   const [manualText, setManualText] = useState('')
@@ -102,6 +103,7 @@ export default function App(): ReactElement {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = useState<number | null>(null)
   const [preferences, setPreferences] = useState<Preferences>(initialPreferences)
+  const [isThemePickerOpen, setIsThemePickerOpen] = useState(false)
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
   const [currentModel, setCurrentModel] = useState('')
   const [isSpeaking, setIsSpeaking] = useState<'source' | 'translated' | null>(null)
@@ -463,10 +465,10 @@ export default function App(): ReactElement {
     setPreferences(updated)
   }
 
-  const toggleTheme = async (): Promise<void> => {
-    const order: ThemePreference[] = ['system', 'light', 'dark']
-    const nextIndex = (order.indexOf(preferences.theme) + 1) % order.length
-    const updated = await window.lazyTrans.patchPreferences({ theme: order[nextIndex] })
+  const pickTheme = async (theme: ThemePreference): Promise<void> => {
+    setIsThemePickerOpen(false)
+    if (theme === preferences.theme) return
+    const updated = await window.lazyTrans.patchPreferences({ theme })
     setPreferences(updated)
   }
 
@@ -668,7 +670,7 @@ export default function App(): ReactElement {
   const statusLabel = getStatusLabel(translation, shortcutLabel)
 
   return (
-    <main className="h-full w-full p-2">
+    <main className="h-full w-full">
       <Card className="relative flex h-full w-full flex-col overflow-hidden">
         <header
           data-tauri-drag-region
@@ -705,17 +707,42 @@ export default function App(): ReactElement {
               <Languages className="h-3.5 w-3.5" />
               <span>{displayDirection(preferences.manualDirection)}</span>
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => void toggleTheme()}
-              aria-label="切换主题"
-              title={`主题：${preferences.theme === 'system' ? '跟随系统' : preferences.theme === 'dark' ? '深色' : '浅色'}`}
-            >
-              <MoonStar className="h-3.5 w-3.5" />
-            </Button>
+            <div className="relative">
+              <Button
+                type="button"
+                variant={isThemePickerOpen ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => setIsThemePickerOpen((open) => !open)}
+                aria-label="选择主题"
+                title={`主题：${displayTheme(preferences.theme)}`}
+              >
+                <ThemeIcon theme={preferences.theme} className="h-3.5 w-3.5" />
+                <span>{displayTheme(preferences.theme)}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </Button>
+              {isThemePickerOpen && (
+                <div
+                  className="absolute left-0 top-9 z-20 min-w-[112px] rounded-md border bg-popover text-popover-foreground shadow-md"
+                  onMouseLeave={() => setIsThemePickerOpen(false)}
+                >
+                  {THEME_OPTIONS.map((theme) => (
+                    <button
+                      key={theme}
+                      type="button"
+                      className={cn(
+                        'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent',
+                        theme === preferences.theme && 'font-medium text-primary'
+                      )}
+                      onClick={() => void pickTheme(theme)}
+                    >
+                      <ThemeIcon theme={theme} className="h-3.5 w-3.5" />
+                      <span>{displayTheme(theme)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <Button
               type="button"
               variant={isHistoryOpen ? 'secondary' : 'ghost'}
@@ -1119,6 +1146,17 @@ function SettingsField({ label, children }: SettingsFieldProps): ReactElement {
       {children}
     </label>
   )
+}
+
+interface ThemeIconProps {
+  theme: ThemePreference
+  className?: string
+}
+
+function ThemeIcon({ theme, className }: ThemeIconProps): ReactElement {
+  if (theme === 'light') return <Sun className={className} />
+  if (theme === 'dark') return <Moon className={className} />
+  return <Monitor className={className} />
 }
 
 function getStatusLabel(translation: TranslationState, shortcutLabel: string): string {

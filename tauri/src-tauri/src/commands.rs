@@ -64,6 +64,10 @@ pub fn error_code(e: &AppError) -> String {
     }
 }
 
+fn translation_direction_for_preferences(prefs: &Preferences) -> TranslateDirection {
+    prefs.manual_direction
+}
+
 #[tauri::command]
 pub async fn translate_input(
     app: AppHandle,
@@ -98,7 +102,7 @@ pub async fn translate_input(
         *guard = Some((my_id, cancel.clone()));
     }
 
-    let direction = TranslateDirection::Auto;
+    let direction = translation_direction_for_preferences(&state.preferences.read().unwrap());
     emit_state(&app, TranslationState {
         status: "loading".into(),
         phase: Some("translating".into()),
@@ -455,5 +459,15 @@ mod tests {
             error_code(&AppError::Api("500 Internal Server Error".into())),
             "api-error"
         );
+    }
+
+    #[test]
+    fn translation_direction_uses_manual_preference() {
+        let prefs = Preferences {
+            manual_direction: TranslateDirection::ZhEn,
+            ..Default::default()
+        };
+
+        assert_eq!(translation_direction_for_preferences(&prefs), TranslateDirection::ZhEn);
     }
 }

@@ -10,6 +10,8 @@ use tauri::{
 pub const WINDOW_LABEL: &str = "translate";
 const WINDOW_WIDTH: f64 = 460.0;
 const WINDOW_HEIGHT: f64 = 520.0;
+const WINDOW_MAX_WIDTH: f64 = 700.0;
+const WINDOW_MAX_HEIGHT: f64 = 800.0;
 const WINDOW_MARGIN: f64 = 18.0;
 
 pub fn ensure_translate_window(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -89,13 +91,20 @@ pub fn show_translate_window(app: &AppHandle, focus: bool, reposition: bool) {
     if reposition {
         position_window_near_cursor(&win);
     }
+    let _ = win.set_always_on_top(true);
     if focus {
         let _ = win.show();
         let _ = win.set_focus();
     } else {
         let _ = win.show();
     }
-    let _ = win.set_always_on_top(true);
+    let visible = win.is_visible().unwrap_or(false);
+    let position = win.outer_position().ok();
+    let size = win.outer_size().ok();
+    eprintln!(
+        "[window] show focus={} reposition={} visible={} position={:?} size={:?}",
+        focus, reposition, visible, position, size
+    );
 }
 
 pub fn position_window_near_cursor(win: &WebviewWindow) {
@@ -139,8 +148,10 @@ pub fn position_window_near_cursor(win: &WebviewWindow) {
     // Use the window's current outer_size to compute placement.
     let scale = win.scale_factor().unwrap_or(1.0);
     let outer = win.outer_size().unwrap_or_default();
-    let w = (outer.width as f64 / scale).max(WINDOW_WIDTH);
-    let h = (outer.height as f64 / scale).max(WINDOW_HEIGHT);
+    let current_w = outer.width as f64 / scale;
+    let current_h = outer.height as f64 / scale;
+    let w = if current_w > WINDOW_MAX_WIDTH { WINDOW_WIDTH } else { current_w.max(WINDOW_WIDTH) };
+    let h = if current_h > WINDOW_MAX_HEIGHT { WINDOW_HEIGHT } else { current_h.max(WINDOW_HEIGHT) };
 
     // Centered horizontally on cursor; "below" cursor in screen-bottom-left coords
     // means subtract (h + margin) from cursor_y_bottom (the window's bottom edge).

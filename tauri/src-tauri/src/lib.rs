@@ -11,7 +11,10 @@ pub mod window;
 pub mod window_state;
 
 use tauri::Manager;
-use tauri_plugin_global_shortcut::{Builder as GlobalShortcutBuilder, ShortcutState as TauriShortcutState};
+use tauri_plugin_global_shortcut::{
+    Builder as GlobalShortcutBuilder, GlobalShortcutExt,
+    ShortcutState as TauriShortcutState,
+};
 
 use state::AppState;
 use window::{ensure_translate_window, show_translate_window};
@@ -25,27 +28,29 @@ fn chrono_like_now() -> String {
     format!("ts={}", secs)
 }
 
+fn append_startup_log(line: &str) {
+    eprintln!("{}", line.trim_end());
+    if let Some(home) = std::env::var_os("HOME") {
+        let log_dir = std::path::PathBuf::from(home).join("Library/Logs/LazyTrans");
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("startup.log");
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let _ = f.write_all(line.as_bytes());
+        }
+    }
+}
+
 pub fn run() {
     let candidates = shortcuts::candidates();
 
-    let mut sc_builder_opt = Some(GlobalShortcutBuilder::new());
-    for c in &candidates {
-        let builder = sc_builder_opt.take().expect("builder present");
-        match builder.with_shortcut(c.to_shortcut()) {
-            Ok(b) => sc_builder_opt = Some(b),
-            Err(e) => {
-                eprintln!("failed to add shortcut {}: {}", c.label, e);
-                // 注意: with_shortcut 失败时 self 已被消费, 已注册的快捷键随之丢失;
-                // 这里重新起一个空 builder, 保证流程不 panic. 对于当前两个静态 candidate
-                // 实际不会失败, 该分支仅作防御.
-                sc_builder_opt = Some(GlobalShortcutBuilder::new());
-            }
-        }
-    }
-    let sc_builder = sc_builder_opt.expect("builder present");
-
     let sc_handler_candidates = candidates.clone();
-    let sc_plugin = sc_builder
+    let setup_candidates = candidates.clone();
+    let sc_plugin = GlobalShortcutBuilder::new()
         .with_handler(move |app, sc, event| {
             if event.state != TauriShortcutState::Pressed {
                 return;
@@ -55,7 +60,7 @@ pub fn run() {
                 .find(|c| c.to_shortcut() == *sc)
                 .map(|c| c.label)
                 .unwrap_or("?");
-            println!("[shortcut] triggered: {}", label);
+            append_startup_log(&format!("[{}] [shortcut] triggered: {}\n", chrono_like_now(), label));
 
             if let Some(app_state) = app.try_state::<AppState>() {
                 *app_state.shortcut_label.write().unwrap() = label.to_string();
@@ -91,15 +96,49 @@ pub fn run() {
             commands::write_clipboard,
             commands::check_accessibility,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             crate::env::load_dotenv_files(app.handle());
             let state = AppState::init(app.handle());
             app.manage(state);
 
-            // 注册一个最小应用菜单, 主要为了让 Cmd+W 的菜单 accelerator 生效.
+            let registration = shortcuts::register_available(&setup_candidates, |candidate| {
+                app.global_shortcut()
+                    .register(candidate.to_shortcut())
+                    .map_err(|error| error.to_string())
+            });
+            match registration {
+                shortcuts::ShortcutRegistration::Registered {
+                    labels,
+                    failed_labels,
+                } => {
+                    let label = labels.first().copied().unwrap_or("Option + D");
+                    if let Some(app_state) = app.try_state::<AppState>() {
+                        *app_state.shortcut_label.write().unwrap() = label.to_string();
+                    }
+                    append_startup_log(&format!(
+                        "[{}] shortcuts registered: {} failed={}\n",
+                        chrono_like_now(),
+                        labels.join(" / "),
+                        if failed_labels.is_empty() {
+                            "none".to_string()
+                        } else {
+                            failed_labels.join(" / ")
+                        }
+                    ));
+                }
+                shortcuts::ShortcutRegistration::Failed { attempted_labels } => {
+                    append_startup_log(&format!(
+                        "[{}] shortcut registration failed: {}\n",
+                        chrono_like_now(),
+                        attempted_labels.join(" / ")
+                    ));
+                }
+            }
+
+            // 注册一个最小应用菜单, 主要为了让 Cmd+W 和标准编辑快捷键生效.
             // macOS Accessory app 不显示菜单栏, 但菜单项的快捷键仍由 NSWindow.performKeyEquivalent
-            // 路径拦截, 所以即使菜单不可见, Cmd+W 也能命中 close_window 事件.
-            use tauri::menu::{Menu, MenuItem, Submenu};
+            // 路径拦截, 所以即使菜单不可见, Cmd+W / Cmd+A / Cmd+C 等也能命中.
+            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
             let close_item = MenuItem::with_id(
                 app.handle(),
                 "close_window",
@@ -107,9 +146,23 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+W"),
             )?;
+            let edit_submenu = Submenu::with_items(
+                app.handle(),
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app.handle(), None)?,
+                    &PredefinedMenuItem::redo(app.handle(), None)?,
+                    &PredefinedMenuItem::separator(app.handle())?,
+                    &PredefinedMenuItem::cut(app.handle(), None)?,
+                    &PredefinedMenuItem::copy(app.handle(), None)?,
+                    &PredefinedMenuItem::paste(app.handle(), None)?,
+                    &PredefinedMenuItem::select_all(app.handle(), None)?,
+                ],
+            )?;
             let window_submenu =
                 Submenu::with_items(app.handle(), "Window", true, &[&close_item])?;
-            let app_menu = Menu::with_items(app.handle(), &[&window_submenu])?;
+            let app_menu = Menu::with_items(app.handle(), &[&edit_submenu, &window_submenu])?;
             app.set_menu(app_menu)?;
             app.on_menu_event(|app, event| {
                 if event.id().as_ref() == "close_window" {
@@ -130,11 +183,12 @@ pub fn run() {
                     let Some(w) = app_handle.get_webview_window(crate::window::WINDOW_LABEL) else { return };
                     let pos = w.outer_position().unwrap_or_default();
                     let size = w.outer_size().unwrap_or_default();
+                    let scale = w.scale_factor().unwrap_or(1.0).max(1.0);
                     let bounds = crate::window_state::Bounds {
-                        x: pos.x,
-                        y: pos.y,
-                        width: size.width,
-                        height: size.height,
+                        x: (pos.x as f64 / scale).round() as i32,
+                        y: (pos.y as f64 / scale).round() as i32,
+                        width: (size.width as f64 / scale).round().max(1.0) as u32,
+                        height: (size.height as f64 / scale).round().max(1.0) as u32,
                     };
                     let writer = state.window_state_writer.clone();
                     tauri::async_runtime::spawn(async move {
@@ -156,20 +210,7 @@ pub fn run() {
                     trusted,
                     exe
                 );
-                eprintln!("{}", line.trim());
-                if let Some(home) = std::env::var_os("HOME") {
-                    let log_dir = std::path::PathBuf::from(home).join("Library/Logs/LazyTrans");
-                    let _ = std::fs::create_dir_all(&log_dir);
-                    let log_path = log_dir.join("startup.log");
-                    use std::io::Write;
-                    if let Ok(mut f) = std::fs::OpenOptions::new()
-                        .create(true)
-                        .append(true)
-                        .open(&log_path)
-                    {
-                        let _ = f.write_all(line.as_bytes());
-                    }
-                }
+                append_startup_log(&line);
             }
             #[cfg(target_os = "macos")]
             {
@@ -221,6 +262,7 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
             let _ = commands::translate_input(app.clone(), state, text).await;
         }
         Ok(_) => {
+            show_translate_window(&app, true, false);
             let _ = app.emit(
                 "translation:update",
                 TranslationState {
@@ -236,16 +278,14 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
             );
         }
         Err(e) => {
+            show_translate_window(&app, true, false);
             let code = commands::error_code(&e);
-            eprintln!("[shortcut-err] code={} msg={}", code, e);
-            if let Some(home) = std::env::var_os("HOME") {
-                use std::io::Write;
-                let log_path = std::path::PathBuf::from(home)
-                    .join("Library/Logs/LazyTrans/startup.log");
-                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
-                    let _ = writeln!(f, "[{}] [shortcut-err] code={} msg={}", chrono_like_now(), code, e);
-                }
-            }
+            append_startup_log(&format!(
+                "[{}] [shortcut-err] code={} msg={}\n",
+                chrono_like_now(),
+                code,
+                e
+            ));
             let _ = app.emit(
                 "translation:update",
                 TranslationState {

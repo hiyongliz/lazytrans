@@ -1,4 +1,4 @@
-import type { TranslateDirection } from './types'
+import type { ThemePreference, TranslateDirection } from './types'
 import type { HistoryEntry } from './types'
 import type { TranslationErrorCode } from './types'
 import type { TranslationStatus } from './types'
@@ -94,6 +94,12 @@ export function displayDirection(current: TranslateDirection): string {
   if (current === 'zh-en') return '中→英'
   if (current === 'en-zh') return '英→中'
   return '自动'
+}
+
+export function displayTheme(current: ThemePreference): string {
+  if (current === 'dark') return '深色'
+  if (current === 'light') return '浅色'
+  return '系统'
 }
 
 export function shouldAutoOpenOnTransition(

@@ -12,7 +12,7 @@
     "dist:mac": "npm run build && electron-builder --mac dir",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --dir src"
   },
   "build": {
     "appId": "com.lazy.lazytrans",
