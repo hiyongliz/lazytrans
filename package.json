@@ -1,71 +1,43 @@
 {
   "name": "lazytrans",
+  "private": true,
   "version": "0.1.0",
   "description": "LazyTrans, a minimal macOS selection translation tool.",
-  "main": "./out/main/index.js",
   "author": "",
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build",
-    "dist:mac": "npm run build && electron-builder --mac dir",
-    "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --dir src"
-  },
-  "build": {
-    "appId": "com.lazy.lazytrans",
-    "productName": "LazyTrans",
-    "asar": true,
-    "files": [
-      "out/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "build/",
-        "to": ".",
-        "filter": [
-          "trayIconTemplate*.png"
-        ]
-      }
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "mac": {
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.icns",
-      "identity": null,
-      "target": [
-        "dir"
-      ]
-    }
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "test": "vitest run"
   },
   "dependencies": {
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-slot": "^1.2.4",
+    "@tauri-apps/api": "^2.0.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.14.0",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^22.15.30",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.5.0",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "electron": "^42.0.0",
-    "electron-builder": "^26.8.1",
-    "electron-vite": "^4.0.0",
-    "lucide-react": "^1.14.0",
     "postcss": "^8.5.14",
-    "tailwind-merge": "^3.5.0",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.9.2",
+    "vite": "^5.4.0",
     "vitest": "^3.2.4"
   }
 }

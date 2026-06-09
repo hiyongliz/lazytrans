@@ -1,6 +1,8 @@
 node_modules/
-out/
 dist/
+src-tauri/target/
+src-tauri/gen/
+out/
 release/
 .playwright-mcp/
 lazytrans-frontend-design.png

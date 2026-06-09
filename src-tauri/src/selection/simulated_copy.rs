@@ -40,7 +40,7 @@ fn fallback_osascript() -> Result<()> {
     Ok(())
 }
 
-/// Timing constants ported verbatim from `src/main/selection.ts`.
+/// Timing constants kept from the previous selection-copy implementation.
 /// `FOCUS_RESTORE_DELAY`: wait after clearing the clipboard before posting ⌘C,
 /// so the focus returns to the previous app.
 /// `POLL_INTERVAL`: how often to check the clipboard for the new value.

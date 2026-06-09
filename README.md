@@ -1,6 +1,6 @@
 # LazyTrans
 
-LazyTrans（懒译）是一个极简版 macOS 划词翻译工具。启动后应用会注册全局快捷键 `Option + D`，读取当前 App 中的选中文本，调用 OpenAI Chat Completions API，并在轻量悬浮窗口中显示原文和译文。
+LazyTrans（懒译）是一个基于 Tauri 2 的极简 macOS 划词翻译工具。启动后应用会注册全局快捷键 `Option + D`，读取当前 App 中的选中文本，调用 OpenAI Chat Completions API，并在轻量悬浮窗口中显示原文和译文。
 
 第一版只做 MVP：不包含 OCR、截图翻译和插件系统。
 
@@ -13,7 +13,7 @@ npm install
 ## 本地运行
 
 ```bash
-OPENAI_API_KEY="your_api_key" npm run dev
+OPENAI_API_KEY="your_api_key" npm run tauri:dev
 ```
 
 也可以创建 `.env` 文件：
@@ -27,13 +27,13 @@ export TRANSLATE_MODEL="gpt-4.1-mini"
 ## 打包 macOS 应用
 
 ```bash
-npm run dist:mac
+npm run tauri:build
 ```
 
 产物会生成在：
 
 ```text
-release/mac-arm64/LazyTrans.app
+src-tauri/target/release/bundle/macos/LazyTrans.app
 ```
 
 当前打包产物是本地未签名版本，适合自己机器测试。首次运行时 macOS 可能需要在“隐私与安全性”里允许打开，并在“辅助功能”里给 LazyTrans 授权。
@@ -44,7 +44,7 @@ release/mac-arm64/LazyTrans.app
 当前工作目录/.env
 LazyTrans.app/Contents/MacOS/.env
 LazyTrans.app/Contents/Resources/.env
-~/Library/Application Support/lazytrans/.env
+Tauri 应用数据目录/.env
 ```
 
 也可以配置更多环境变量：
@@ -53,7 +53,7 @@ LazyTrans.app/Contents/Resources/.env
 OPENAI_API_KEY="your_api_key" \
 TRANSLATE_API_BASE_URL="https://api.openai.com/v1" \
 TRANSLATE_MODEL="gpt-4.1-mini" \
-npm run dev
+npm run tauri:dev
 ```
 
 ## 环境变量
@@ -99,7 +99,7 @@ LazyTrans 通过 `osascript` 模拟 `Command + C` 获取当前选中文本。首
 系统设置 -> 隐私与安全性 -> 辅助功能
 ```
 
-然后允许当前终端应用或 LazyTrans 控制电脑。开发模式下通常需要给 Terminal、iTerm、Warp、VS Code 等启动 `npm run dev` 的应用授权。
+然后允许当前终端应用或 LazyTrans 控制电脑。开发模式下通常需要给 Terminal、iTerm、Warp、VS Code 等启动 `npm run tauri:dev` 的应用授权。
 
 ## 快捷键
 
