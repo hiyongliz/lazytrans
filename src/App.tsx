@@ -1,35 +1,10 @@
-import type { KeyboardEvent as ReactKeyboardEvent, ReactElement, ReactNode } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  ArrowRightLeft,
-  Check,
-  ChevronDown,
-  Clipboard,
-  Clock,
-  Copy,
-  Download,
-  Eraser,
-  ExternalLink,
-  Keyboard,
-  Languages,
-  Loader2,
-  Monitor,
-  Moon,
-  Pause,
-  RefreshCw,
-  Search,
-  Settings,
-  Square,
-  Sun,
-  Trash2,
-  Volume2,
-  X
-} from 'lucide-react'
+import type { KeyboardEvent as ReactKeyboardEvent, ReactElement } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { ApiSettings } from './lib/types'
 import type { HistoryEntry } from './lib/types'
 import type { Preferences, PromptStyle, ThemePreference, TranslateDirection } from './lib/types'
-import { PROVIDER_PRESETS, findProviderByBaseUrl } from './lib/providers'
+import { PROVIDER_PRESETS } from './lib/providers'
 import type { TranslationState } from './lib/types'
 import {
   PRIMARY_DIRECTIONS,
@@ -37,24 +12,19 @@ import {
   TARGET_LANGUAGES,
   acceleratorFromEvent,
   displayDirection,
-  displayPromptStyle,
-  displayTheme,
   errorActionsFor,
-  filterHistory,
-  formatHistoryTimestamp,
   nextHistoryIndex,
   shouldAutoOpenOnTransition,
   shouldAutoOpenSettings,
   shouldSyncManualInput
 } from './lib/app-behavior'
 import { cancelSpeech, speak } from './lib/speech'
-import { Button } from '@/components/ui/button'
+import { HistoryPanel } from '@/components/HistoryPanel'
+import { SettingsPanel } from '@/components/SettingsPanel'
+import { TitleBar } from '@/components/TitleBar'
+import { TranslationInput } from '@/components/TranslationInput'
+import { TranslationResult } from '@/components/TranslationResult'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 
 const initialState: TranslationState = {
   status: 'idle',
@@ -88,15 +58,6 @@ type SettingsStatus =
   | 'preset-applied'
   | 'error'
 type CopyStatus = 'idle' | 'translated' | 'source' | 'error'
-
-const DOT_TONE: Record<TranslationState['status'], string> = {
-  idle: 'bg-muted-foreground/40',
-  loading: 'bg-amber-500 animate-pulse',
-  success: 'bg-primary',
-  empty: 'bg-muted-foreground/40',
-  error: 'bg-destructive',
-  cancelled: 'bg-amber-500/60'
-}
 
 const THEME_OPTIONS: ThemePreference[] = ['system', 'light', 'dark']
 
@@ -408,8 +369,6 @@ export default function App(): ReactElement {
     )
   }
 
-  const activeProviderId = findProviderByBaseUrl(settingsDraft.baseUrl)?.id
-
   const saveApiSettings = async (): Promise<void> => {
     setSettingsStatus('loading')
     setSettingsMessage('')
@@ -615,486 +574,66 @@ export default function App(): ReactElement {
     return copyText(translation.sourceText, 'source')
   }
 
-  const renditionContent = useMemo<ReactElement>(() => {
-    const phoneticBlock = translation.phonetic ? (
-      <p className="mb-1.5 font-mono text-sm text-muted-foreground select-text">
-        {translation.phonetic}
-      </p>
-    ) : null
-
-    if (translation.status === 'success' && translation.translatedText) {
-      return (
-        <div key={translation.translatedText} className="space-y-2">
-          {phoneticBlock}
-          <p className="text-[17px] leading-7 text-foreground whitespace-pre-wrap">
-            {translation.translatedText}
-          </p>
-        </div>
-      )
-    }
-
-    if (translation.status === 'error') {
-      return (
-        <div className="space-y-2.5">
-          <p className="text-sm leading-relaxed text-destructive">
-            {translation.errorMessage || '出错了'}
-          </p>
-          {errorActions.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {errorActions.includes('open-settings') && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => setIsSettingsOpen(true)}
-                >
-                  <Settings className="h-3.5 w-3.5" />
-                  打开设置
-                </Button>
-              )}
-              {errorActions.includes('retry') && canRetry && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => void retryTranslation()}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  重试
-                </Button>
-              )}
-              {errorActions.includes('open-accessibility') && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 gap-1 px-2 text-xs"
-                  onClick={() => void openAccessibilitySettings()}
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  辅助功能
-                </Button>
-              )}
-            </div>
-          )}
-        </div>
-      )
-    }
-
-    if (isLoading) {
-      if (translation.translatedText) {
-        return (
-          <div className="space-y-2">
-            {phoneticBlock}
-            <p className="text-[17px] leading-7 text-muted-foreground whitespace-pre-wrap">
-              {translation.translatedText}
-            </p>
-          </div>
-        )
-      }
-      if (translation.errorMessage) {
-        return (
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {translation.errorMessage}
-          </p>
-        )
-      }
-      return (
-        <div className="flex flex-col gap-2.5">
-          {phoneticBlock}
-          <Skeleton className="h-3.5 w-[92%]" />
-          <Skeleton className="h-3.5 w-[76%]" />
-          <Skeleton className="h-3.5 w-[54%]" />
-        </div>
-      )
-    }
-
-    if (translation.status === 'cancelled') {
-      return (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {translation.errorMessage || '已取消'}
-        </p>
-      )
-    }
-
-    if (translation.status === 'empty') {
-      return (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {translation.errorMessage || '没有获取到选中文本'}
-        </p>
-      )
-    }
-
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <kbd className="inline-flex items-center rounded border bg-background px-2 py-1 font-mono text-xs text-muted-foreground shadow-sm">
-          {shortcutLabel}
-        </kbd>
-      </div>
-    )
-  }, [
-    canRetry,
-    errorActions,
-    isLoading,
-    shortcutLabel,
-    translation.errorMessage,
-    translation.phonetic,
-    translation.status,
-    translation.translatedText
-  ])
-
   const statusLabel = getStatusLabel(translation, shortcutLabel)
 
   return (
     <main className="h-full w-full">
       <Card className="relative flex h-full w-full flex-col overflow-hidden">
-        <header
-          data-tauri-drag-region
-          onMouseDown={async (e) => {
+        <TitleBar
+          status={translation.status}
+          statusLabel={statusLabel}
+          manualDirection={preferences.manualDirection}
+          primaryDirections={PRIMARY_DIRECTIONS}
+          targetLanguages={TARGET_LANGUAGES}
+          isLangPickerOpen={isLangPickerOpen}
+          isHistoryOpen={isHistoryOpen}
+          isSettingsOpen={isSettingsOpen}
+          onStartDrag={async (e) => {
             if (e.button !== 0) return
             const target = e.target as HTMLElement
             if (target.closest('button,input,textarea,a,[role="button"]')) return
             const { getCurrentWindow } = await import('@tauri-apps/api/window')
             await getCurrentWindow().startDragging()
           }}
-          className="drag-region grid h-11 shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2 border-b px-2"
-        >
-          <div className="no-drag flex items-center gap-0.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={closeWindow}
-              aria-label="关闭"
-              title="关闭"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <div className="relative">
-              <Button
-                type="button"
-                variant={preferences.manualDirection === 'auto' ? 'ghost' : 'secondary'}
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                onClick={() => setIsLangPickerOpen((open) => !open)}
-                aria-label="选择翻译目标"
-                title={`翻译目标：${displayDirection(preferences.manualDirection)}`}
-              >
-                <Languages className="h-3.5 w-3.5" />
-                <span>{displayDirection(preferences.manualDirection)}</span>
-                <ChevronDown className="h-3 w-3 shrink-0" />
-              </Button>
-              {isLangPickerOpen && (
-                <div
-                  className="absolute left-0 top-9 z-40 w-44 overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md"
-                  onMouseLeave={() => setIsLangPickerOpen(false)}
-                >
-                  <div className="flex flex-col">
-                    {PRIMARY_DIRECTIONS.map((dir) => (
-                      <button
-                        key={dir}
-                        type="button"
-                        className={cn(
-                          'px-3 py-1.5 text-left text-xs hover:bg-accent',
-                          dir === preferences.manualDirection && 'font-medium text-primary'
-                        )}
-                        onClick={() => void selectDirection(dir)}
-                      >
-                        {displayDirection(dir)}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 border-t">
-                    {TARGET_LANGUAGES.map((dir) => (
-                      <button
-                        key={dir}
-                        type="button"
-                        className={cn(
-                          'px-3 py-1.5 text-left text-xs hover:bg-accent',
-                          dir === preferences.manualDirection && 'font-medium text-primary'
-                        )}
-                        onClick={() => void selectDirection(dir)}
-                      >
-                        {displayDirection(dir)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="pointer-events-none flex min-w-0 items-center justify-center gap-2">
-            <span
-              className={cn('inline-block h-1.5 w-1.5 rounded-full', DOT_TONE[translation.status])}
-              aria-hidden
-            />
-            <span className="truncate text-xs text-muted-foreground">
-              {statusLabel}
-            </span>
-          </div>
-
-          <div className="no-drag flex items-center justify-end gap-0.5">
-            <Button
-              type="button"
-              variant={isHistoryOpen ? 'secondary' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => {
-                setIsHistoryOpen((open) => !open)
-                if (isSettingsOpen) setIsSettingsOpen(false)
-              }}
-              aria-label="历史记录"
-              title="历史记录"
-            >
-              <Clock className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant={isSettingsOpen ? 'secondary' : 'ghost'}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => {
-                setIsSettingsOpen((current) => !current)
-                if (isHistoryOpen) setIsHistoryOpen(false)
-              }}
-              aria-label="设置"
-              title="设置"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          </div>
-        </header>
+          onClose={closeWindow}
+          onToggleLangPicker={() => setIsLangPickerOpen((open) => !open)}
+          onCloseLangPicker={() => setIsLangPickerOpen(false)}
+          onSelectDirection={selectDirection}
+          onToggleHistory={() => {
+            setIsHistoryOpen((open) => !open)
+            if (isSettingsOpen) setIsSettingsOpen(false)
+          }}
+          onToggleSettings={() => {
+            setIsSettingsOpen((current) => !current)
+            if (isHistoryOpen) setIsHistoryOpen(false)
+          }}
+        />
 
         {isSettingsOpen && (
-          <div
-            className="no-drag absolute left-2 right-2 top-12 z-40 max-h-[calc(100%-3.5rem)] overflow-y-auto rounded-md border bg-card/95 px-3 py-3 shadow-lg backdrop-blur"
-            role="dialog"
-            aria-label="设置"
-          >
-            <form
-              className="space-y-2"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void saveApiSettings()
-              }}
-            >
-              <SettingsSectionTitle>通用</SettingsSectionTitle>
-
-              <SettingRow label="主题">
-                <div className="relative">
-                  <Button
-                    type="button"
-                    variant={isThemePickerOpen ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-xs"
-                    onClick={() => setIsThemePickerOpen((open) => !open)}
-                    aria-label="选择主题"
-                    title={`主题：${displayTheme(preferences.theme)}`}
-                  >
-                    <ThemeIcon theme={preferences.theme} className="h-3.5 w-3.5" />
-                    <span>{displayTheme(preferences.theme)}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0" />
-                  </Button>
-                  {isThemePickerOpen && (
-                    <div
-                      className="absolute right-0 top-9 z-20 min-w-[112px] rounded-md border bg-popover text-popover-foreground shadow-md"
-                      onMouseLeave={() => setIsThemePickerOpen(false)}
-                    >
-                      {THEME_OPTIONS.map((theme) => (
-                        <button
-                          key={theme}
-                          type="button"
-                          className={cn(
-                            'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent',
-                            theme === preferences.theme && 'font-medium text-primary'
-                          )}
-                          onClick={() => void pickTheme(theme)}
-                        >
-                          <ThemeIcon theme={theme} className="h-3.5 w-3.5" />
-                          <span>{displayTheme(theme)}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </SettingRow>
-
-              <SettingRow label="风格">
-                {PROMPT_STYLE_OPTIONS.map((style) => (
-                  <Button
-                    key={style}
-                    type="button"
-                    variant={style === preferences.promptStyle ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-7 px-2 text-xs"
-                    onClick={() => void selectPromptStyle(style)}
-                  >
-                    {displayPromptStyle(style)}
-                  </Button>
-                ))}
-              </SettingRow>
-
-              <SettingRow label="快捷键">
-                <Button
-                  type="button"
-                  variant={isRecordingShortcut ? 'default' : 'secondary'}
-                  size="sm"
-                  className={cn(
-                    'h-7 gap-1 px-2 text-xs',
-                    isRecordingShortcut && 'ring-2 ring-primary ring-offset-1 ring-offset-background'
-                  )}
-                  onClick={() => setIsRecordingShortcut((value) => !value)}
-                  onKeyDown={isRecordingShortcut ? handleShortcutRecord : undefined}
-                  title="点击后按下想要的组合键"
-                >
-                  {isRecordingShortcut ? (
-                    <>
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-primary-foreground" />
-                      按下组合键…
-                    </>
-                  ) : (
-                    <>
-                      <Keyboard className="h-3.5 w-3.5" />
-                      {shortcutLabel}
-                    </>
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs text-muted-foreground"
-                  onClick={() => void applyCustomShortcut(null)}
-                  title="恢复默认快捷键"
-                >
-                  默认
-                </Button>
-              </SettingRow>
-
-              <SettingRow label="失焦隐藏">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={preferences.autoHideOnBlur}
-                  aria-label="失焦自动隐藏"
-                  onClick={() => void toggleAutoHide()}
-                  className={cn(
-                    'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
-                    preferences.autoHideOnBlur ? 'bg-primary' : 'bg-muted'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
-                      preferences.autoHideOnBlur ? 'translate-x-4' : 'translate-x-0.5'
-                    )}
-                  />
-                </button>
-              </SettingRow>
-
-              <div className="border-t pt-1" />
-              <SettingsSectionTitle>API</SettingsSectionTitle>
-
-              <SettingRow label="预设" align="start">
-                {PROVIDER_PRESETS.map((preset) => (
-                  <Button
-                    key={preset.id}
-                    type="button"
-                    variant={activeProviderId === preset.id ? 'secondary' : 'ghost'}
-                    size="sm"
-                    className="h-6 gap-1 px-2 text-xs"
-                    onClick={() => applyProviderPreset(preset.id)}
-                    title={preset.hint ?? preset.baseUrl}
-                  >
-                    {preset.name}
-                    {preset.hint && (
-                      <span className="rounded bg-muted px-1 py-0 text-[10px] text-muted-foreground">
-                        本地
-                      </span>
-                    )}
-                  </Button>
-                ))}
-              </SettingRow>
-
-              <SettingsField label="Key">
-                <Input
-                  ref={apiKeyRef}
-                  type="password"
-                  value={settingsDraft.apiKey}
-                  placeholder="sk-..."
-                  autoComplete="off"
-                  onChange={(event) => updateSettingsDraft('apiKey', event.target.value)}
-                />
-              </SettingsField>
-
-              <SettingsField label="URL">
-                <Input
-                  type="url"
-                  value={settingsDraft.baseUrl}
-                  placeholder="默认 https://api.openai.com/v1"
-                  onChange={(event) => updateSettingsDraft('baseUrl', event.target.value)}
-                />
-              </SettingsField>
-
-              <SettingsField label="Model">
-                <Input
-                  type="text"
-                  value={settingsDraft.model}
-                  placeholder="默认 gpt-4.1-mini"
-                  onChange={(event) => updateSettingsDraft('model', event.target.value)}
-                />
-              </SettingsField>
-
-              <div className="flex items-center justify-between pt-1">
-                <span
-                  className={cn(
-                    'text-xs',
-                    settingsStatus === 'error'
-                      ? 'text-destructive'
-                      : settingsStatus === 'saved' ||
-                          settingsStatus === 'tested' ||
-                          settingsStatus === 'preset-applied'
-                        ? 'text-primary'
-                        : 'text-muted-foreground'
-                  )}
-                >
-                  {settingsMessage || ' '}
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={settingsBusy}
-                    onClick={() => void testApiSettings()}
-                  >
-                    {settingsStatus === 'testing' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ArrowRightLeft className="h-4 w-4" />
-                    )}
-                    测试
-                  </Button>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={settingsBusy}
-                  >
-                    {settingsStatus === 'loading' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4" />
-                    )}
-                    保存
-                  </Button>
-                </div>
-              </div>
-            </form>
-          </div>
+          <SettingsPanel
+            preferences={preferences}
+            settingsDraft={settingsDraft}
+            settingsStatus={settingsStatus}
+            settingsMessage={settingsMessage}
+            settingsBusy={settingsBusy}
+            shortcutLabel={shortcutLabel}
+            promptStyleOptions={PROMPT_STYLE_OPTIONS}
+            themeOptions={THEME_OPTIONS}
+            apiKeyRef={apiKeyRef}
+            isThemePickerOpen={isThemePickerOpen}
+            isRecordingShortcut={isRecordingShortcut}
+            onToggleThemePicker={() => setIsThemePickerOpen((open) => !open)}
+            onPickTheme={pickTheme}
+            onSelectPromptStyle={selectPromptStyle}
+            onToggleShortcutRecorder={() => setIsRecordingShortcut((value) => !value)}
+            onShortcutRecord={handleShortcutRecord}
+            onResetShortcut={() => applyCustomShortcut(null)}
+            onToggleAutoHide={toggleAutoHide}
+            onApplyProviderPreset={applyProviderPreset}
+            onUpdateSettingsDraft={updateSettingsDraft}
+            onTestApiSettings={testApiSettings}
+            onSaveApiSettings={saveApiSettings}
+          />
         )}
 
         {isHistoryOpen && (
@@ -1125,223 +664,46 @@ export default function App(): ReactElement {
         )}
 
         <div className="no-drag relative z-10 flex min-h-0 flex-1 flex-col gap-3 p-3">
-          <div className="relative shrink-0">
-            <Textarea
-              ref={textareaRef}
-              data-manual-input="true"
-              value={manualText}
-              placeholder="键入或选中…"
-              className="min-h-[88px] resize-none border-border/70 bg-background/80 pr-40 shadow-none"
-              onChange={(event) => {
-                setManualText(event.target.value)
-                if (historyIndex !== null) setHistoryIndex(null)
-              }}
-              onKeyDown={handleKeyDown}
-            />
-            <div className="absolute bottom-2 right-2 flex items-center gap-1">
-              {canPlaySource && (
-                <Button
-                  type="button"
-                  variant={isSpeaking === 'source' ? 'default' : 'secondary'}
-                  size="icon"
-                  className={cn('h-8 w-8 shadow-sm', isSpeaking !== 'source' && 'bg-background/90')}
-                  onClick={() => togglePlayback('source')}
-                  aria-label={isSpeaking === 'source' ? '停止播放原文' : '播放原文'}
-                  title={isSpeaking === 'source' ? '停止' : '播放原文'}
-                >
-                  {isSpeaking === 'source' ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-              {canCopySource && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 bg-background/90 shadow-sm"
-                  onClick={() => void copySourceText()}
-                  aria-label={copyStatus === 'source' ? '已复制原文' : '复制原文'}
-                  title={copyStatus === 'source' ? '已复制原文' : '复制原文'}
-                >
-                  {copyStatus === 'source' ? (
-                    <Check className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Clipboard className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-              {manualText && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 bg-background/90 shadow-sm"
-                  onClick={clearManualText}
-                  aria-label="清空输入"
-                  title="清空"
-                >
-                  <Eraser className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="default"
-                size="icon"
-                className="h-8 w-8 shadow-sm"
-                onClick={() => void submitManualText()}
-                disabled={!canSubmit}
-                aria-label="翻译"
-                title="翻译"
-              >
-                {isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <ArrowRightLeft className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
+          <TranslationInput
+            textareaRef={textareaRef}
+            manualText={manualText}
+            canSubmit={canSubmit}
+            isLoading={isLoading}
+            canPlaySource={canPlaySource}
+            canCopySource={canCopySource}
+            copyStatus={copyStatus}
+            isSpeaking={isSpeaking}
+            onChange={(value) => {
+              setManualText(value)
+              if (historyIndex !== null) setHistoryIndex(null)
+            }}
+            onKeyDown={handleKeyDown}
+            onTogglePlayback={togglePlayback}
+            onCopySource={copySourceText}
+            onClear={clearManualText}
+            onSubmit={submitManualText}
+          />
 
-          <Card className="relative flex-1 min-h-0 overflow-hidden bg-card shadow-none">
-            <ScrollArea className="h-full">
-              <div className="px-4 py-4 pr-12 pb-12 select-text">{renditionContent}</div>
-            </ScrollArea>
-            {isLoading && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                className="absolute left-2 top-2 h-7 w-7 bg-background/90 shadow-sm"
-                onClick={() => void cancelTranslation()}
-                aria-label="取消翻译"
-                title="取消"
-              >
-                <Square className="h-3 w-3" />
-              </Button>
-            )}
-            <div className="absolute bottom-2 right-2 flex items-center gap-1">
-              {canRetry && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 bg-background/90 shadow-sm"
-                  onClick={() => void retryTranslation()}
-                  aria-label="重新翻译"
-                  title="重试"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              )}
-              {canPlayTranslated && (
-                <Button
-                  type="button"
-                  variant={isSpeaking === 'translated' ? 'default' : 'secondary'}
-                  size="icon"
-                  className={cn('h-8 w-8 shadow-sm', isSpeaking !== 'translated' && 'bg-background/90')}
-                  onClick={() => togglePlayback('translated')}
-                  aria-label={isSpeaking === 'translated' ? '停止播放译文' : '播放译文'}
-                  title={isSpeaking === 'translated' ? '停止' : '播放译文'}
-                >
-                  {isSpeaking === 'translated' ? (
-                    <Pause className="h-4 w-4" />
-                  ) : (
-                    <Volume2 className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-              {translation.status === 'success' && translation.translatedText && (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-8 w-8 bg-background/90 shadow-sm"
-                  onClick={() => void copyTranslatedText()}
-                  aria-label={copyStatus === 'translated' ? '已复制译文' : '复制译文'}
-                  title={
-                    copyStatus === 'translated'
-                      ? '已复制译文'
-                      : copyStatus === 'error'
-                        ? '复制失败'
-                        : '复制译文'
-                  }
-                >
-                  {copyStatus === 'translated' ? (
-                    <Check className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Copy className="h-4 w-4" />
-                  )}
-                </Button>
-              )}
-            </div>
-          </Card>
+          <TranslationResult
+            translation={translation}
+            isLoading={isLoading}
+            shortcutLabel={shortcutLabel}
+            canRetry={canRetry}
+            canPlayTranslated={canPlayTranslated}
+            isSpeaking={isSpeaking}
+            copyStatus={copyStatus}
+            errorActions={errorActions}
+            onOpenSettings={() => setIsSettingsOpen(true)}
+            onRetry={retryTranslation}
+            onOpenAccessibilitySettings={openAccessibilitySettings}
+            onCancelTranslation={cancelTranslation}
+            onTogglePlayback={togglePlayback}
+            onCopyTranslated={copyTranslatedText}
+          />
         </div>
       </Card>
     </main>
   )
-}
-
-interface SettingsFieldProps {
-  label: string
-  children: ReactElement
-}
-
-function SettingsField({ label, children }: SettingsFieldProps): ReactElement {
-  return (
-    <label className="grid grid-cols-[68px_1fr] items-center gap-2">
-      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-interface SettingRowProps {
-  label: string
-  align?: 'center' | 'start'
-  children: ReactNode
-}
-
-function SettingRow({ label, align = 'center', children }: SettingRowProps): ReactElement {
-  return (
-    <div
-      className={cn(
-        'grid grid-cols-[68px_1fr] gap-2',
-        align === 'start' ? 'items-start' : 'items-center'
-      )}
-    >
-      <span
-        className={cn(
-          'text-xs text-muted-foreground',
-          align === 'start' && 'pt-1.5'
-        )}
-      >
-        {label}
-      </span>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-1">{children}</div>
-    </div>
-  )
-}
-
-function SettingsSectionTitle({ children }: { children: ReactNode }): ReactElement {
-  return (
-    <p className="pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-      {children}
-    </p>
-  )
-}
-
-interface ThemeIconProps {
-  theme: ThemePreference
-  className?: string
-}
-
-function ThemeIcon({ theme, className }: ThemeIconProps): ReactElement {
-  if (theme === 'light') return <Sun className={className} />
-  if (theme === 'dark') return <Moon className={className} />
-  return <Monitor className={className} />
 }
 
 function getStatusLabel(translation: TranslationState, shortcutLabel: string): string {
@@ -1365,224 +727,4 @@ function getStatusLabel(translation: TranslationState, shortcutLabel: string): s
 function formatErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return String(error)
-}
-
-interface HistoryPanelProps {
-  entries: readonly HistoryEntry[]
-  query: string
-  onQueryChange: (next: string) => void
-  onReuse: (entry: HistoryEntry) => void
-  onCopy: (entry: HistoryEntry) => void | Promise<void>
-  onRemove: (entry: HistoryEntry) => void | Promise<void>
-  onClear: () => void | Promise<void>
-  clearArmed: boolean
-  onArmClear: () => void
-  onCancelClear: () => void
-  onExport: (format: 'json' | 'markdown') => void | Promise<void>
-  exportMessage: string
-  onClose: () => void
-}
-
-function HistoryPanel({
-  entries,
-  query,
-  onQueryChange,
-  onReuse,
-  onCopy,
-  onRemove,
-  onClear,
-  clearArmed,
-  onArmClear,
-  onCancelClear,
-  onExport,
-  exportMessage,
-  onClose
-}: HistoryPanelProps): ReactElement {
-  const filtered = useMemo(() => filterHistory(entries, query), [entries, query])
-  const [copiedId, setCopiedId] = useState<string | null>(null)
-  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    return () => {
-      if (copyResetRef.current) clearTimeout(copyResetRef.current)
-    }
-  }, [])
-
-  const handleCopy = (entry: HistoryEntry): void => {
-    void Promise.resolve(onCopy(entry)).then(() => {
-      setCopiedId(entry.id)
-      if (copyResetRef.current) clearTimeout(copyResetRef.current)
-      copyResetRef.current = setTimeout(() => setCopiedId(null), 1200)
-    })
-  }
-
-  return (
-    <div className="no-drag flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
-        <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <Input
-          type="search"
-          value={query}
-          placeholder={`搜索 ${entries.length} 条历史…`}
-          className="h-7 border-0 bg-transparent px-0 text-xs shadow-none focus-visible:ring-0"
-          onChange={(event) => onQueryChange(event.target.value)}
-        />
-        {clearArmed ? (
-          <>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={() => void onClear()}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              确认清空
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={onCancelClear}
-            >
-              取消
-            </Button>
-          </>
-        ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
-            onClick={onArmClear}
-            disabled={entries.length === 0}
-            title="清空全部历史"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            清空
-          </Button>
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={onClose}
-          aria-label="关闭历史面板"
-          title="收起"
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      {(entries.length > 0 || exportMessage) && (
-        <div className="flex items-center gap-2 border-b px-3 py-1.5">
-          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            导出
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-[11px]"
-            disabled={entries.length === 0}
-            onClick={() => void onExport('json')}
-          >
-            <Download className="h-3 w-3" />
-            JSON
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 gap-1 px-2 text-[11px]"
-            disabled={entries.length === 0}
-            onClick={() => void onExport('markdown')}
-          >
-            <Download className="h-3 w-3" />
-            Markdown
-          </Button>
-          {exportMessage && (
-            <span className="min-w-0 flex-1 truncate text-[10px] text-muted-foreground">
-              {exportMessage}
-            </span>
-          )}
-        </div>
-      )}
-      <ScrollArea className="min-h-0 flex-1">
-        {filtered.length === 0 ? (
-          <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {entries.length === 0 ? '还没有历史记录' : '没有匹配的记录'}
-          </p>
-        ) : (
-          <ul className="divide-y">
-            {filtered.map((entry) => (
-              <li
-                key={entry.id}
-                className="group cursor-pointer px-3 py-2 hover:bg-accent/60 focus-within:bg-accent/60"
-                role="button"
-                tabIndex={0}
-                onClick={() => onReuse(entry)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault()
-                    onReuse(entry)
-                  }
-                }}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-foreground">{entry.sourceText}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {entry.translatedText}
-                    </p>
-                    <p className="mt-0.5 truncate text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                      <span className="mr-1 rounded bg-muted px-1 py-px text-muted-foreground">
-                        {displayDirection(entry.direction)}
-                      </span>
-                      {formatHistoryTimestamp(entry.createdAt)} · {entry.model}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5 text-muted-foreground/60 transition-opacity group-hover:text-foreground">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        handleCopy(entry)
-                      }}
-                      aria-label={copiedId === entry.id ? '已复制译文' : '复制译文'}
-                      title={copiedId === entry.id ? '已复制' : '复制译文'}
-                    >
-                      {copiedId === entry.id ? (
-                        <Check className="h-3 w-3 text-primary" />
-                      ) : (
-                        <Copy className="h-3 w-3" />
-                      )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        void onRemove(entry)
-                      }}
-                      aria-label="删除该条"
-                      title="删除"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </ScrollArea>
-    </div>
-  )
 }
