@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tokio_util::sync::CancellationToken;
 
@@ -102,7 +102,10 @@ pub async fn translate_input(
         *guard = Some((my_id, cancel.clone()));
     }
 
-    let direction = translation_direction_for_preferences(&state.preferences.read().unwrap());
+    let (direction, style) = {
+        let prefs = state.preferences.read().unwrap();
+        (translation_direction_for_preferences(&prefs), prefs.prompt_style)
+    };
     emit_state(&app, TranslationState {
         status: "loading".into(),
         phase: Some("translating".into()),
@@ -125,6 +128,7 @@ pub async fn translate_input(
         &cfg,
         TranslateStreamOptions {
             direction,
+            style,
             timeout: std::time::Duration::from_millis(15000),
             cancel: Some(&cancel),
             cache: Some(&state.cache),
@@ -186,6 +190,7 @@ pub async fn translate_input(
                 h.clone()
             };
             let _ = write_json_atomic(&history_path, &next_history);
+            crate::tray::refresh_tray_menu(&app);
         }
         Err(AppError::Cancelled) => {
             // 取消由 cancel_translation 命令负责推送 state，这里不重复
@@ -347,7 +352,7 @@ pub fn list_history(state: State<'_, AppState>) -> Vec<HistoryEntry> {
 }
 
 #[tauri::command]
-pub fn clear_history(state: State<'_, AppState>) -> Result<()> {
+pub fn clear_history(app: AppHandle, state: State<'_, AppState>) -> Result<()> {
     let history_path = state.paths.history();
     let snapshot = {
         let mut h = state.history.write().unwrap();
@@ -355,11 +360,13 @@ pub fn clear_history(state: State<'_, AppState>) -> Result<()> {
         h.clone()
     };
     write_json_atomic(&history_path, &snapshot)?;
+    crate::tray::refresh_tray_menu(&app);
     Ok(())
 }
 
 #[tauri::command]
 pub fn remove_history_entry(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
 ) -> Result<Vec<HistoryEntry>> {
@@ -371,6 +378,7 @@ pub fn remove_history_entry(
         next
     };
     write_json_atomic(&history_path, &next)?;
+    crate::tray::refresh_tray_menu(&app);
     Ok(next)
 }
 
@@ -399,6 +407,11 @@ pub fn get_preferences(state: State<'_, AppState>) -> Preferences {
 }
 
 #[tauri::command]
+pub fn get_shortcut_label(state: State<'_, AppState>) -> String {
+    state.shortcut_label.read().unwrap().clone()
+}
+
+#[tauri::command]
 pub fn patch_preferences(
     state: State<'_, AppState>,
     patch: PreferencesPatch,
@@ -409,6 +422,102 @@ pub fn patch_preferences(
     *state.preferences.write().unwrap() = next.clone();
     write_json_atomic(&prefs_path, &next)?;
     Ok(next)
+}
+
+#[tauri::command]
+pub fn set_custom_shortcut(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    accelerator: Option<String>,
+) -> Result<String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+
+    let trimmed = accelerator
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let label = if let Some(acc) = trimmed.as_ref() {
+        let (sc, label) = crate::shortcuts::shortcut_from_parts(acc)
+            .ok_or_else(|| AppError::Selection("无法解析该快捷键".into()))?;
+        gs.register(sc)
+            .map_err(|e| AppError::Selection(format!("快捷键注册失败：{}", e)))?;
+        label
+    } else {
+        let candidates = crate::shortcuts::candidates();
+        let reg = crate::shortcuts::register_available(&candidates, |c| {
+            gs.register(c.to_shortcut()).map_err(|e| e.to_string())
+        });
+        match reg {
+            crate::shortcuts::ShortcutRegistration::Registered { labels, .. } => {
+                labels.first().copied().unwrap_or("Option + D").to_string()
+            }
+            crate::shortcuts::ShortcutRegistration::Failed { .. } => {
+                return Err(AppError::Selection("默认快捷键注册失败".into()));
+            }
+        }
+    };
+
+    *state.shortcut_label.write().unwrap() = label.clone();
+
+    let prefs_path = state.paths.preferences();
+    let snapshot = {
+        let mut p = state.preferences.write().unwrap();
+        p.custom_shortcut = trimmed;
+        p.clone()
+    };
+    let _ = write_json_atomic(&prefs_path, &snapshot);
+
+    Ok(label)
+}
+
+fn history_to_markdown(entries: &[HistoryEntry]) -> String {
+    let mut out = String::from("# LazyTrans 历史记录\n\n");
+    for e in entries {
+        out.push_str("---\n\n");
+        out.push_str(&format!("- 原文：{}\n", e.source_text));
+        out.push_str(&format!("- 译文：{}\n", e.translated_text));
+        out.push_str(&format!("- 模型：{}\n\n", e.model));
+    }
+    out
+}
+
+#[tauri::command]
+pub fn export_history(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    format: String,
+) -> Result<String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let history = state.history.read().unwrap().clone();
+    if history.is_empty() {
+        return Err(AppError::Selection("没有可导出的历史".into()));
+    }
+
+    let (content, ext) = if format == "markdown" || format == "md" {
+        (history_to_markdown(&history), "md")
+    } else {
+        (
+            serde_json::to_string_pretty(&history).map_err(|e| AppError::Io(e.to_string()))?,
+            "json",
+        )
+    };
+
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let dir = app
+        .path()
+        .download_dir()
+        .map_err(|e| AppError::Io(e.to_string()))?;
+    let path = dir.join(format!("lazytrans-history-{}.{}", secs, ext));
+    std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
+
+    Ok(path.display().to_string())
 }
 
 #[cfg(test)]

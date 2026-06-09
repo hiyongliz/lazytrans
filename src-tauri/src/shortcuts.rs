@@ -1,4 +1,71 @@
+use std::str::FromStr;
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+
+/// 把前端录制的加速器字符串（如 "Alt+KeyD"、"Super+Shift+KeyK"）解析为
+/// (Shortcut, 友好标签)。至少需要一个修饰键，否则返回 None。
+pub fn shortcut_from_parts(accelerator: &str) -> Option<(Shortcut, String)> {
+    let mut mods = Modifiers::empty();
+    let mut code: Option<Code> = None;
+
+    for raw in accelerator.split('+') {
+        let part = raw.trim();
+        if part.is_empty() {
+            continue;
+        }
+        match part.to_lowercase().as_str() {
+            "cmd" | "command" | "super" | "meta" | "win" => mods |= Modifiers::SUPER,
+            "ctrl" | "control" => mods |= Modifiers::CONTROL,
+            "alt" | "option" | "opt" => mods |= Modifiers::ALT,
+            "shift" => mods |= Modifiers::SHIFT,
+            _ => {
+                code = Code::from_str(part).ok();
+            }
+        }
+    }
+
+    let code = code?;
+    if mods.is_empty() {
+        return None;
+    }
+    let label = friendly_label(mods, code);
+    Some((Shortcut::new(Some(mods), code), label))
+}
+
+fn friendly_label(mods: Modifiers, code: Code) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    if mods.contains(Modifiers::CONTROL) {
+        parts.push("Control");
+    }
+    if mods.contains(Modifiers::ALT) {
+        parts.push("Option");
+    }
+    if mods.contains(Modifiers::SHIFT) {
+        parts.push("Shift");
+    }
+    if mods.contains(Modifiers::SUPER) {
+        parts.push("Command");
+    }
+    let key = friendly_key(code);
+    let mut label = parts.join(" + ");
+    if label.is_empty() {
+        key
+    } else {
+        label.push_str(" + ");
+        label.push_str(&key);
+        label
+    }
+}
+
+fn friendly_key(code: Code) -> String {
+    let raw = format!("{:?}", code);
+    if let Some(letter) = raw.strip_prefix("Key") {
+        return letter.to_string();
+    }
+    if let Some(digit) = raw.strip_prefix("Digit") {
+        return digit.to_string();
+    }
+    raw
+}
 
 #[derive(Debug, Clone)]
 pub struct ShortcutCandidate {
@@ -72,6 +139,23 @@ impl ShortcutCandidate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_accelerator_with_friendly_label() {
+        let (sc, label) = shortcut_from_parts("Alt+KeyD").expect("should parse");
+        assert_eq!(sc, Shortcut::new(Some(Modifiers::ALT), Code::KeyD));
+        assert_eq!(label, "Option + D");
+
+        let (_, label) = shortcut_from_parts("Super+Shift+Digit1").expect("should parse");
+        assert_eq!(label, "Shift + Command + 1");
+    }
+
+    #[test]
+    fn rejects_accelerator_without_modifier_or_key() {
+        assert!(shortcut_from_parts("KeyD").is_none());
+        assert!(shortcut_from_parts("Alt").is_none());
+        assert!(shortcut_from_parts("").is_none());
+    }
 
     #[test]
     fn has_two_candidates_in_order() {

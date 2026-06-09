@@ -1,4 +1,4 @@
-import type { ThemePreference, TranslateDirection } from './types'
+import type { PromptStyle, ThemePreference, TranslateDirection } from './types'
 import type { HistoryEntry } from './types'
 import type { TranslationErrorCode } from './types'
 import type { TranslationStatus } from './types'
@@ -90,10 +90,64 @@ export function cycleDirection(current: TranslateDirection): TranslateDirection 
   return 'auto'
 }
 
+const DIRECTION_LABELS: Record<TranslateDirection, string> = {
+  auto: '自动',
+  'zh-en': '中→英',
+  'en-zh': '英→中',
+  zh: '中文',
+  en: '英文',
+  ja: '日语',
+  ko: '韩语',
+  fr: '法语',
+  de: '德语',
+  es: '西班牙语',
+  ru: '俄语'
+}
+
 export function displayDirection(current: TranslateDirection): string {
-  if (current === 'zh-en') return '中→英'
-  if (current === 'en-zh') return '英→中'
-  return '自动'
+  return DIRECTION_LABELS[current] ?? '自动'
+}
+
+export const DIRECTION_OPTIONS = Object.keys(DIRECTION_LABELS) as TranslateDirection[]
+
+export const PRIMARY_DIRECTIONS: TranslateDirection[] = ['auto', 'zh-en', 'en-zh']
+
+export const TARGET_LANGUAGES: TranslateDirection[] = [
+  'zh',
+  'en',
+  'ja',
+  'ko',
+  'fr',
+  'de',
+  'es',
+  'ru'
+]
+
+export const PROMPT_STYLE_OPTIONS: PromptStyle[] = ['programmer', 'normal', 'formal']
+
+export function displayPromptStyle(style: PromptStyle): string {
+  if (style === 'normal') return '普通'
+  if (style === 'formal') return '正式'
+  return '程序员'
+}
+
+export interface ShortcutKeyEvent {
+  metaKey: boolean
+  ctrlKey: boolean
+  altKey: boolean
+  shiftKey: boolean
+  code: string
+}
+
+export function acceleratorFromEvent(event: ShortcutKeyEvent): string | null {
+  if (/^(Meta|Control|Alt|Shift|OS)/.test(event.code)) return null
+  const mods: string[] = []
+  if (event.metaKey) mods.push('Super')
+  if (event.ctrlKey) mods.push('Ctrl')
+  if (event.altKey) mods.push('Alt')
+  if (event.shiftKey) mods.push('Shift')
+  if (mods.length === 0) return null
+  return [...mods, event.code].join('+')
 }
 
 export function displayTheme(current: ThemePreference): string {

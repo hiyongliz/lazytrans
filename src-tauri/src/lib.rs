@@ -48,24 +48,12 @@ fn append_startup_log(line: &str) {
 pub fn run() {
     let candidates = shortcuts::candidates();
 
-    let sc_handler_candidates = candidates.clone();
     let setup_candidates = candidates.clone();
     let sc_plugin = GlobalShortcutBuilder::new()
-        .with_handler(move |app, sc, event| {
+        .with_handler(move |app, _sc, event| {
             if event.state != TauriShortcutState::Pressed {
                 return;
             }
-            let label = sc_handler_candidates
-                .iter()
-                .find(|c| c.to_shortcut() == *sc)
-                .map(|c| c.label)
-                .unwrap_or("?");
-            append_startup_log(&format!("[{}] [shortcut] triggered: {}\n", chrono_like_now(), label));
-
-            if let Some(app_state) = app.try_state::<AppState>() {
-                *app_state.shortcut_label.write().unwrap() = label.to_string();
-            }
-
             let app = app.clone();
             tauri::async_runtime::spawn(handle_translate_shortcut(app));
         })
@@ -92,47 +80,79 @@ pub fn run() {
             commands::remove_history_entry,
             commands::translate_history_entry,
             commands::get_preferences,
+            commands::get_shortcut_label,
             commands::patch_preferences,
             commands::write_clipboard,
             commands::check_accessibility,
+            commands::set_custom_shortcut,
+            commands::export_history,
         ])
         .setup(move |app| {
             crate::env::load_dotenv_files(app.handle());
             let state = AppState::init(app.handle());
             app.manage(state);
 
-            let registration = shortcuts::register_available(&setup_candidates, |candidate| {
-                app.global_shortcut()
-                    .register(candidate.to_shortcut())
-                    .map_err(|error| error.to_string())
-            });
-            match registration {
-                shortcuts::ShortcutRegistration::Registered {
-                    labels,
-                    failed_labels,
-                } => {
-                    let label = labels.first().copied().unwrap_or("Option + D");
-                    if let Some(app_state) = app.try_state::<AppState>() {
-                        *app_state.shortcut_label.write().unwrap() = label.to_string();
-                    }
+            let custom_shortcut = app
+                .state::<AppState>()
+                .preferences
+                .read()
+                .unwrap()
+                .custom_shortcut
+                .clone();
+
+            let custom_label = custom_shortcut
+                .as_ref()
+                .filter(|s| !s.trim().is_empty())
+                .and_then(|acc| shortcuts::shortcut_from_parts(acc))
+                .and_then(|(sc, label)| app.global_shortcut().register(sc).ok().map(|_| label));
+
+            let resolved_label = match custom_label {
+                Some(label) => {
                     append_startup_log(&format!(
-                        "[{}] shortcuts registered: {} failed={}\n",
+                        "[{}] custom shortcut registered: {}\n",
                         chrono_like_now(),
-                        labels.join(" / "),
-                        if failed_labels.is_empty() {
-                            "none".to_string()
-                        } else {
-                            failed_labels.join(" / ")
+                        label
+                    ));
+                    label
+                }
+                None => {
+                    let registration =
+                        shortcuts::register_available(&setup_candidates, |candidate| {
+                            app.global_shortcut()
+                                .register(candidate.to_shortcut())
+                                .map_err(|error| error.to_string())
+                        });
+                    match registration {
+                        shortcuts::ShortcutRegistration::Registered {
+                            labels,
+                            failed_labels,
+                        } => {
+                            append_startup_log(&format!(
+                                "[{}] shortcuts registered: {} failed={}\n",
+                                chrono_like_now(),
+                                labels.join(" / "),
+                                if failed_labels.is_empty() {
+                                    "none".to_string()
+                                } else {
+                                    failed_labels.join(" / ")
+                                }
+                            ));
+                            labels.first().copied().unwrap_or("Option + D").to_string()
                         }
-                    ));
+                        shortcuts::ShortcutRegistration::Failed { attempted_labels } => {
+                            append_startup_log(&format!(
+                                "[{}] shortcut registration failed: {}\n",
+                                chrono_like_now(),
+                                attempted_labels.join(" / ")
+                            ));
+                            "Option + D".to_string()
+                        }
+                    }
                 }
-                shortcuts::ShortcutRegistration::Failed { attempted_labels } => {
-                    append_startup_log(&format!(
-                        "[{}] shortcut registration failed: {}\n",
-                        chrono_like_now(),
-                        attempted_labels.join(" / ")
-                    ));
-                }
+            };
+
+            if let Some(app_state) = app.try_state::<AppState>() {
+                *app_state.shortcut_label.write().unwrap() = resolved_label;
             }
 
             // 注册一个最小应用菜单, 主要为了让 Cmd+W 和标准编辑快捷键生效.
@@ -237,6 +257,12 @@ async fn handle_translate_shortcut(app: tauri::AppHandle) {
         .try_state::<AppState>()
         .map(|s| s.shortcut_label.read().unwrap().clone())
         .unwrap_or_else(|| "Option + D".into());
+
+    append_startup_log(&format!(
+        "[{}] [shortcut] triggered: {}\n",
+        chrono_like_now(),
+        label
+    ));
 
     show_translate_window(&app, false, true);
     let _ = app.emit(

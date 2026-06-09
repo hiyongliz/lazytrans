@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::errors::{AppError, Result};
 use crate::translator::cache::{CacheKey, TranslateCache};
-use prompts::TranslateDirection;
+use prompts::{PromptStyle, TranslateDirection};
 
 pub const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 pub const DEFAULT_OPENAI_MODEL: &str = "gpt-4.1-mini";
@@ -58,6 +58,7 @@ struct ChatMessage<'a> {
 
 pub struct TranslateStreamOptions<'a> {
     pub direction: TranslateDirection,
+    pub style: PromptStyle,
     pub timeout: Duration,
     pub cancel: Option<&'a CancellationToken>,
     pub cache: Option<&'a TranslateCache>,
@@ -68,6 +69,7 @@ impl<'a> Default for TranslateStreamOptions<'a> {
     fn default() -> Self {
         Self {
             direction: TranslateDirection::Auto,
+            style: PromptStyle::Programmer,
             timeout: Duration::from_millis(API_REQUEST_TIMEOUT_MS),
             cancel: None,
             cache: None,
@@ -97,7 +99,7 @@ pub async fn translate_text_stream(
             text: source.to_string(),
             model: config.model.clone(),
             base_url: config.base_url.clone(),
-            direction: format!("{:?}", options.direction).to_lowercase(),
+            direction: format!("{:?}-{:?}", options.direction, options.style).to_lowercase(),
             kind: "translation".into(),
         };
         if let Some(cached) = cache.get(&key) {
@@ -109,7 +111,7 @@ pub async fn translate_text_stream(
     let body = serde_json::to_vec(&ChatRequest {
         model: &config.model,
         messages: vec![
-            ChatMessage { role: "system", content: prompts::system_prompt(options.direction) },
+            ChatMessage { role: "system", content: prompts::system_prompt(options.direction, options.style) },
             ChatMessage { role: "user", content: prompts::build_user_prompt(source) },
         ],
         temperature: 0.2,
@@ -161,7 +163,7 @@ pub async fn translate_text_stream(
             ));
         }
         (options.on_delta)(&translated);
-        store_in_cache(options.cache, source, config, options.direction, &translated);
+        store_in_cache(options.cache, source, config, options.direction, options.style, &translated);
         return Ok(translated);
     }
 
@@ -198,7 +200,7 @@ pub async fn translate_text_stream(
             "API response did not include translated text".into(),
         ));
     }
-    store_in_cache(options.cache, source, config, options.direction, &translated);
+    store_in_cache(options.cache, source, config, options.direction, options.style, &translated);
     Ok(translated)
 }
 
@@ -207,6 +209,7 @@ fn store_in_cache(
     source: &str,
     config: &TranslateConfig,
     direction: TranslateDirection,
+    style: PromptStyle,
     translated: &str,
 ) {
     let Some(cache) = cache else { return };
@@ -214,7 +217,7 @@ fn store_in_cache(
         text: source.to_string(),
         model: config.model.clone(),
         base_url: config.base_url.clone(),
-        direction: format!("{:?}", direction).to_lowercase(),
+        direction: format!("{:?}-{:?}", direction, style).to_lowercase(),
         kind: "translation".into(),
     };
     cache.set(key, translated.to_string());

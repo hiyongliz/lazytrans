@@ -20,8 +20,11 @@ declare global {
       removeHistoryEntry: (id: string) => Promise<HistoryEntry[]>
       translateHistoryEntry: (id: string) => Promise<void>
       getPreferences: () => Promise<Preferences>
+      getShortcutLabel: () => Promise<string>
       patchPreferences: (patch: Partial<Preferences>) => Promise<Preferences>
       writeClipboard: (text: string) => Promise<void>
+      setCustomShortcut: (accelerator: string | null) => Promise<string>
+      exportHistory: (format: 'json' | 'markdown') => Promise<string>
     }
   }
 }

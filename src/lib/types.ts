@@ -1,6 +1,19 @@
 export type TranslationStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error' | 'cancelled'
 export type TranslationPhase = 'reading-selection' | 'translating'
-export type TranslateDirection = 'auto' | 'zh-en' | 'en-zh'
+export type TranslateDirection =
+  | 'auto'
+  | 'zh-en'
+  | 'en-zh'
+  | 'zh'
+  | 'en'
+  | 'ja'
+  | 'ko'
+  | 'fr'
+  | 'de'
+  | 'es'
+  | 'ru'
+
+export type PromptStyle = 'programmer' | 'normal' | 'formal'
 
 export type TranslationErrorCode =
   | 'missing-api-key'
@@ -40,6 +53,9 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 export interface Preferences {
   theme: ThemePreference
   manualDirection: TranslateDirection
+  promptStyle: PromptStyle
   recentModels: string[]
   shortcutDowngradeAcknowledged: boolean
+  autoHideOnBlur: boolean
+  customShortcut: string | null
 }
